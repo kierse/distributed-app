@@ -2,12 +2,12 @@ package eece513
 
 import eece513.model.MembershipList
 import eece513.model.Node
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.SocketAddress
+import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
 import java.time.Instant
+import java.util.*
+import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
@@ -21,11 +21,16 @@ fun main(args: Array<String>) {
 }
 
 class ClusterNode(private val logger: Logger) {
+    private enum class ServerSocketAttach {
+        PREDECESSOR, JOIN
+    }
+
     private val localAddr = InetSocketAddress(InetAddress.getLocalHost(), PORT)
 
     private var membershipList = MembershipList(emptyList())
 
     private var predecessors: List<Node> = emptyList()
+
     private lateinit var predecessorHeartbeatChannel: DatagramChannel
     private lateinit var predecessorServerChannel: ServerSocketChannel
     private var predecessorActionChannels: List<SocketChannel> = emptyList()
@@ -33,7 +38,12 @@ class ClusterNode(private val logger: Logger) {
     private var successorActionChannels: List<SocketChannel> = emptyList()
     private var successorHeartbeatChannels: List<DatagramChannel> = emptyList()
 
+    private lateinit var joinRequestServerChannel: ServerSocketChannel
+
     private lateinit var self: Node
+
+    private val timer = Timer("successors heartbeat timer", true)
+    private lateinit var heartbeatTimerTask: TimerTask
 
     fun join(addr: SocketAddress) {
         // is this in blocking mode? I think it is
@@ -44,10 +54,6 @@ class ClusterNode(private val logger: Logger) {
                     val connected = channel.connect(addr)
 
                     if (!connected) throw Throwable("wasn't able to connect!")
-
-                    // Send empty request. The join server will get our url/ip from the request
-                    // and send back a membership list
-                    channel.write(ByteBuffer.allocate(0))
 
                     // get length of membership list (in bytes)
                     val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
@@ -63,7 +69,6 @@ class ClusterNode(private val logger: Logger) {
                     }
 
                     msgBuffer.position(0)
-
                     membershipList = bytesToMembershipList(msgBuffer)
                 }
     }
@@ -82,10 +87,15 @@ class ClusterNode(private val logger: Logger) {
             self = getSelfNode()
         }
 
+        // start listening for incoming join connections
+        joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(InetAddress.getLocalHost(), JOIN_PORT))
+        joinRequestServerChannel.configureBlocking(false)
+
+        startSendingHeartbeats()
+
         predecessors = getPredecessors()
 
         successorActionChannels = buildSuccessorActionChannels()
-        successorHeartbeatChannels = buildSuccessorHeartbeatChannels()
 
         predecessorHeartbeatChannel = DatagramChannel.open().bind(localAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
@@ -98,13 +108,22 @@ class ClusterNode(private val logger: Logger) {
         successorActionChannels.forEach { it.register(selector, SelectionKey.OP_WRITE) }
         successorHeartbeatChannels.forEach { it.register(selector, SelectionKey.OP_WRITE) }
         predecessorHeartbeatChannel.register(selector, SelectionKey.OP_READ)
-        predecessorServerChannel.register(selector, SelectionKey.OP_ACCEPT)
+
+        predecessorServerChannel
+                .register(selector, SelectionKey.OP_ACCEPT)
+                .apply {
+                    attach(ServerSocketAttach.PREDECESSOR)
+                }
+
+        joinRequestServerChannel
+                .register(selector, SelectionKey.OP_ACCEPT)
+                .apply {
+                    attach(ServerSocketAttach.JOIN)
+                }
 
         while (true) {
             // block until we have at least one channel ready to use
-            logger.debug("tag", "before")
             selector.select()
-            logger.debug("tag", "after")
 
             val selectionKeySet = selector.selectedKeys()
             for (key in selectionKeySet) {
@@ -115,15 +134,14 @@ class ClusterNode(private val logger: Logger) {
                     }
 
                     key.isReadable -> {
-                        val channel = key.channel() as DatagramChannel
-                        val remoteAddr = channel.receive(ByteBuffer.allocate(0))
-
-                        logger.debug("tag", "${remoteAddr}")
-
-//                        TODO()
+                        processPredecessorHeartbeat(key.channel() as DatagramChannel)
+                        selectionKeySet.remove(key)
                     }
 
-                    key.isAcceptable -> acceptPredecessorConnection(key.channel() as SocketChannel)
+                    key.isAcceptable -> processConnectionAttempt(
+                            key.channel() as ServerSocketChannel,
+                            key.attachment() as ServerSocketAttach
+                    )
                 }
 
                 selectionKeySet.remove(key)
@@ -140,32 +158,78 @@ class ClusterNode(private val logger: Logger) {
     }
 
     private fun getPredecessors(): List<Node> {
-        if (membershipList.nodes.isEmpty() || membershipList.nodes.size < 2) return emptyList()
+        if (membershipList.nodes.size < 2) return emptyList()
 
         TODO()
     }
 
     private fun buildSuccessorActionChannels(): List<SocketChannel> {
-        if (membershipList.nodes.isEmpty() || membershipList.nodes.size < 2) return emptyList()
+        if (membershipList.nodes.size < 2) return emptyList()
 
         // put channels in non-blocking mode
         // channel.configureBlocking(false)
         TODO()
     }
 
-    private fun buildSuccessorHeartbeatChannels(): List<DatagramChannel> {
-        if (membershipList.nodes.isEmpty() || membershipList.nodes.size < 2) return emptyList()
+    private fun startSendingHeartbeats() {
+        if (membershipList.nodes.size < 2) return
 
-        // put channels in non-blocking mode
-        // channel.configureBlocking(false)
+        val nodes = membershipList.nodes
+        val successors = mutableListOf<Node>()
+
+        var i = 0
+        var found = false
+
+        while (true) {
+            if (nodes[i] == self) {
+                if (successors.size == 0) {
+                    found = true
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            if (found) successors.add(nodes[i])
+            if (successors.size == 3) break
+            i = if (nodes.size > i + 1) i + 1 else 0
+        }
+
+        heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
+            successors.forEach { successor ->
+                DatagramSocket().use { socket ->
+                    socket.send(DatagramPacket(byteArrayOf(), 0, successor.addr))
+                }
+            }
+        }
+    }
+
+    private fun processPredecessorHeartbeat(channel: DatagramChannel) {
+        println("received packet!")
+        channel.receive(ByteBuffer.allocate(10))
+//        TODO()
+    }
+
+    private fun processConnectionAttempt(channel: ServerSocketChannel, attach: ServerSocketAttach) =
+            when (attach) {
+                ServerSocketAttach.PREDECESSOR -> processPredecessorConnection(channel)
+                ServerSocketAttach.JOIN -> processJoinConnection(channel)
+            }
+
+    private fun processPredecessorConnection(channel: ServerSocketChannel) {
         TODO()
     }
 
-    private fun processPredecessorHeartbeat(channel: SocketChannel) {
-        TODO()
-    }
+    private fun processJoinConnection(channel: ServerSocketChannel) {
+        val newNode = channel.accept()
+               .use { socketChannel ->
+                   Node(socketChannel.remoteAddress, Instant.now())
+               }
 
-    private fun acceptPredecessorConnection(channel: SocketChannel) {
-        TODO()
+        val newList = MembershipList(
+                membershipList.nodes.plus(newNode)
+        )
+
+        logger.debug("tag", "$newList")
     }
 }
