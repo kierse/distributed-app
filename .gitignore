@@ -70,3 +70,5 @@ modules.xml
 
 .gradle/
 build/
+
+logs/
