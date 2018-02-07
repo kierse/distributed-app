@@ -1,15 +1,18 @@
 syntax = "proto3";
 
+package eece513;
+
 option java_package = "eece513";
 option java_outer_classname = "Actions";
 
-message Action{
-    int32 length = 1;
+message Message{
     enum Type{
         JOIN = 0;
         REMOVE = 1;
         DROP= 2;
     }
+
+    int32 length = 1;
     Type type = 2;
     string body = 3;
 }

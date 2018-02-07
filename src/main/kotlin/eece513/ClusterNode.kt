@@ -12,9 +12,6 @@ import java.nio.channels.*
 import java.time.Instant
 import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
-import java.io.ByteArrayOutputStream
-import java.io.FileOutputStream
-
 
 
 
@@ -75,6 +72,25 @@ class ClusterNode(private val logger: Logger) {
                     val connected = channel.connect(addr)
 
                     if (!connected) throw Throwable("wasn't able to connect!")
+
+
+
+                    // set buffer
+                    val byteBuffer = ByteBuffer.allocate(1024)
+                    // build proto
+                    val action = Actions.Message.newBuilder()
+                            .setLength(byteBuffer.capacity())
+                            .setType(Actions.Message.Type.JOIN)
+                            .setBody("ec2-35-183-26-44.ca-central-1.compute.amazonaws.com")
+                            .build()
+                    // put proto into buffer
+                    byteBuffer.put(action.toByteArray())
+                    // flip buffer
+                    byteBuffer.flip()
+                    // write to socket
+                    channel.write(byteBuffer)
+
+
 
                     // get length of membership list (in bytes)
                     val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
@@ -181,9 +197,34 @@ class ClusterNode(private val logger: Logger) {
     private fun getPredecessors(): List<Node> {
         if (membershipList.nodes.size < 2) return emptyList()
 
-        TODO()
+        //TODO()
+        val path =  "asdf"
+        val inputStream: InputStream = File(path).inputStream()
+        val lineList = mutableListOf<String>()
+
+        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
+
+        val newList = mutableListOf<String>()
+
+        val whatismyip = URL("http://checkip.amazonaws.com")
+        val buffer = BufferedReader(InputStreamReader(
+                whatismyip.openStream()))
+
+        var ip = buffer.readLine() //you get the IP as a String
+        ip = ip.replace(".","-")
+        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
+
+
+        val position = lineList.indexOf(ip)
+        val size = lineList.size
+
+        newList.add(lineList.elementAt(position%size))
+        newList.add(lineList.elementAt((position+1)%size))
+        newList.add(lineList.elementAt((position+2)%size))
+        return emptyList()
     }
 
+    // connect to successors
     private fun buildSuccessorActionChannels(): List<SocketChannel> {
         if (membershipList.nodes.size < 2) return emptyList()
 
@@ -192,6 +233,7 @@ class ClusterNode(private val logger: Logger) {
         TODO()
     }
 
+    // send heartbeat
     private fun startSendingHeartbeats() {
         if (membershipList.nodes.size < 2) return
 
@@ -225,6 +267,7 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
+    // what to do when you get heartbeat
     private fun processPredecessorHeartbeat(channel: DatagramChannel) {
         println("received packet!")
         channel.receive(ByteBuffer.allocate(10))
@@ -254,11 +297,6 @@ class ClusterNode(private val logger: Logger) {
 
         logger.debug("tag", "$newList")
 
-//        val action = Actions.Action.newBuilder()
-//                .setLength(length)
-//                .setType(Actions.Action.Type.JOIN)
-//                .setBody("ec2-35-183-26-44.ca-central-1.compute.amazonaws.com")
-//                .build()
     }
 
     // can return InetAddress/InetSocketAddress
@@ -286,32 +324,5 @@ class ClusterNode(private val logger: Logger) {
         newList.add(lineList.elementAt((position-1)%size))
         newList.add(lineList.elementAt((position-2)%size))
         return newList
-    }
-
-    fun ReturnThreePredecessors(path:String): List<String> {
-        val inputStream: InputStream = File(path).inputStream()
-        val lineList = mutableListOf<String>()
-
-        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
-
-        val newList = mutableListOf<String>()
-
-        val whatismyip = URL("http://checkip.amazonaws.com")
-        val buffer = BufferedReader(InputStreamReader(
-                whatismyip.openStream()))
-
-        var ip = buffer.readLine() //you get the IP as a String
-        ip = ip.replace(".","-")
-        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
-
-
-        val position = lineList.indexOf(ip)
-        val size = lineList.size
-
-        newList.add(lineList.elementAt(position%size))
-        newList.add(lineList.elementAt((position+1)%size))
-        newList.add(lineList.elementAt((position+2)%size))
-        return newList
-
     }
 }
