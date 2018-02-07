@@ -31,9 +31,6 @@ sourceSets {
         proto{
                 srcDir 'src/main/proto'
          }
-        java {
-            srcDirs += 'build/generated/source/proto/main/java'
-        }
     }
     test {
         kotlin {
@@ -64,7 +61,7 @@ dependencies {
 }
 
 protobuf {
-    //generatedFilesBaseDir = "$projectDir/generated"
+    generatedFilesBaseDir = "$projectDir/src"
 
     protoc {
         artifact = "com.google.protobuf:protoc:3.5.1"
