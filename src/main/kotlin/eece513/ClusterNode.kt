@@ -2,6 +2,10 @@ package eece513
 
 import eece513.model.MembershipList
 import eece513.model.Node
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -13,24 +17,19 @@ fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
     val node = ClusterNode(logger)
 
-    val person = Test.Person.newBuilder()
-            .setName("joe")
-            .setId(10)
-            .setEmail("joe@blow.com")
-            .build()
-
-    println(person)
-    return
+//    val person = Test.Person.newBuilder()
+//            .setName("joe")
+//            .setId(10)
+//            .setEmail("joe@blow.com")
+//            .build()
+//
+//    println(person)
+//    return
 
 
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), PORT))
     }
-//    val person = Person.newBuilder()
-//    person.setId(2)
-//    person.setName("john")
-//    person.setEmail("a@a.com")
-
     node.start()
 }
 
@@ -245,5 +244,59 @@ class ClusterNode(private val logger: Logger) {
         )
 
         logger.debug("tag", "$newList")
+    }
+
+    // can return InetAddress/InetSocketAddress
+    fun ReturnThreeSuccessors(path:String): List<String> {
+        val inputStream: InputStream = File(path).inputStream()
+        val lineList = mutableListOf<String>()
+
+        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
+
+        val newList = mutableListOf<String>()
+
+        val whatismyip = URL("http://checkip.amazonaws.com")
+        val buffer = BufferedReader(InputStreamReader(
+                whatismyip.openStream()))
+
+        var ip = buffer.readLine() //you get the IP as a String
+        ip = ip.replace(".","-")
+        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
+
+
+        val position = lineList.indexOf(ip)
+        val size = lineList.size
+
+        newList.add(lineList.elementAt(position%size))
+        newList.add(lineList.elementAt((position-1)%size))
+        newList.add(lineList.elementAt((position-2)%size))
+        return newList
+    }
+
+    fun ReturnThreePredecessors(path:String): List<String> {
+        val inputStream: InputStream = File(path).inputStream()
+        val lineList = mutableListOf<String>()
+
+        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
+
+        val newList = mutableListOf<String>()
+
+        val whatismyip = URL("http://checkip.amazonaws.com")
+        val buffer = BufferedReader(InputStreamReader(
+                whatismyip.openStream()))
+
+        var ip = buffer.readLine() //you get the IP as a String
+        ip = ip.replace(".","-")
+        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
+
+
+        val position = lineList.indexOf(ip)
+        val size = lineList.size
+
+        newList.add(lineList.elementAt(position%size))
+        newList.add(lineList.elementAt((position+1)%size))
+        newList.add(lineList.elementAt((position+2)%size))
+        return newList
+
     }
 }

@@ -64,6 +64,10 @@ protobuf {
     }
 }
 
+clean{
+
+}
+
 compileKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
