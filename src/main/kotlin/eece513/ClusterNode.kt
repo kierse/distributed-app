@@ -16,6 +16,7 @@ fun main(args: Array<String>) {
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), PORT))
     }
+val ss = eece513.Test.Person.()
 
     node.start()
 }
