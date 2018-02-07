@@ -13,6 +13,16 @@ fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
     val node = ClusterNode(logger)
 
+    val person = Test.Person.newBuilder()
+            .setName("joe")
+            .setId(10)
+            .setEmail("joe@blow.com")
+            .build()
+
+    println(person)
+    return
+
+
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), PORT))
     }
