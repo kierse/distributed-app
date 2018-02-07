@@ -75,23 +75,6 @@ class ClusterNode(private val logger: Logger) {
 
 
 
-                    // set buffer
-                    val byteBuffer = ByteBuffer.allocate(1024)
-                    // build proto
-                    val action = Actions.Message.newBuilder()
-                            .setLength(byteBuffer.capacity())
-                            .setType(Actions.Message.Type.JOIN)
-                            .setBody("ec2-35-183-26-44.ca-central-1.compute.amazonaws.com")
-                            .build()
-                    // put proto into buffer
-                    byteBuffer.put(action.toByteArray())
-                    // flip buffer
-                    byteBuffer.flip()
-                    // write to socket
-                    channel.write(byteBuffer)
-
-
-
                     // get length of membership list (in bytes)
                     val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
                     while (msgLengthBuffer.hasRemaining()) {
@@ -325,4 +308,43 @@ class ClusterNode(private val logger: Logger) {
         newList.add(lineList.elementAt((position-2)%size))
         return newList
     }
+
+    fun sendMessage(channel: SocketChannel, type:Actions.Message.Type, node:Node){
+        // set buffer
+        val byteBuffer = ByteBuffer.allocate(1024)
+        // build proto
+        val action = Actions.Message.newBuilder()
+                .setType(type)
+                .setTimestamp(Instant.now().toEpochMilli())
+                .setHostName(node.addr.toString())
+                .setPort((node.addr as InetSocketAddress).port)
+                .build()
+        // put proto into buffer
+
+        byteBuffer.put(action.toByteArray())
+        // flip buffer
+        byteBuffer.flip()
+        // write to socket
+        channel.write(byteBuffer)
+    }
+
+    fun readMessage(channel:SocketChannel){
+        val buf = ByteBuffer.allocate(1024)
+        val numBytesRead = channel.read(buf)
+        if (numBytesRead == -1) {
+            //do something
+        }
+        buf.flip()
+
+        val parsed = Actions.Message.parseFrom(buf)
+        when (parsed.getType()){
+            Actions.Message.Type.JOIN ->
+                println("joined")
+            Actions.Message.Type.REMOVE ->
+                println("removed")
+            Actions.Message.Type.DROP ->
+                println("dropped")
+        }
+    }
+
 }

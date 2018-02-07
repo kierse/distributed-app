@@ -12,7 +12,8 @@ message Message{
         DROP= 2;
     }
 
-    int32 length = 1;
-    Type type = 2;
-    string body = 3;
+    Type type = 1;
+    int64 timestamp = 2;
+    string hostName = 3;
+    int32 port = 4;
 }
