@@ -12,6 +12,12 @@ import java.nio.channels.*
 import java.time.Instant
 import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
+import java.io.ByteArrayOutputStream
+import java.io.FileOutputStream
+
+
+
+
 
 fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
@@ -58,12 +64,14 @@ class ClusterNode(private val logger: Logger) {
     private val timer = Timer("successors heartbeat timer", true)
     private lateinit var heartbeatTimerTask: TimerTask
 
+    // what to do when it wants to join
     fun join(addr: SocketAddress) {
         // is this in blocking mode? I think it is
         // which is ok as we are connecting to the cluster
         SocketChannel
                 .open()
                 .use { channel ->
+                    // opens channel
                     val connected = channel.connect(addr)
 
                     if (!connected) throw Throwable("wasn't able to connect!")
@@ -233,6 +241,7 @@ class ClusterNode(private val logger: Logger) {
         TODO()
     }
 
+    // what to do when it gets a join request
     private fun processJoinConnection(channel: ServerSocketChannel) {
         val newNode = channel.accept()
                .use { socketChannel ->
@@ -244,6 +253,12 @@ class ClusterNode(private val logger: Logger) {
         )
 
         logger.debug("tag", "$newList")
+
+//        val action = Actions.Action.newBuilder()
+//                .setLength(length)
+//                .setType(Actions.Action.Type.JOIN)
+//                .setBody("ec2-35-183-26-44.ca-central-1.compute.amazonaws.com")
+//                .build()
     }
 
     // can return InetAddress/InetSocketAddress
