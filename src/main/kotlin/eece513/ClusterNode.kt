@@ -1,5 +1,6 @@
 package eece513
 
+import eece513.model.Action
 import eece513.model.MembershipList
 import eece513.model.Node
 import java.net.*
@@ -21,11 +22,13 @@ fun main(args: Array<String>) {
 }
 
 class ClusterNode(private val logger: Logger) {
-    private enum class ServerSocketAttach {
-        PREDECESSOR, JOIN
+    private enum class ChannelType {
+        PREDECESSOR_SERVER, PREDECESSOR_ACTION, PREDECESSOR_HEARTBEAT, SUCCESSOR_HEARTBEAT, SUCCESSOR_ACTION, JOIN_SERVER
     }
 
-    private val localAddr = InetSocketAddress(InetAddress.getLocalHost(), PORT)
+    private val localAddr = InetAddress.getLocalHost()
+//    private val localAddr = InetAddress.getByName("10.0.0.34")
+    private val socketAddr = InetSocketAddress(localAddr, PORT)
 
     private var membershipList = MembershipList(emptyList())
 
@@ -33,7 +36,7 @@ class ClusterNode(private val logger: Logger) {
 
     private lateinit var predecessorHeartbeatChannel: DatagramChannel
     private lateinit var predecessorServerChannel: ServerSocketChannel
-    private var predecessorActionChannels: List<SocketChannel> = emptyList()
+    private var predecessorActionChannels: List<SelectionKey> = emptyList()
 
     private var successorActionChannels: List<SocketChannel> = emptyList()
     private var successorHeartbeatChannels: List<DatagramChannel> = emptyList()
@@ -79,82 +82,119 @@ class ClusterNode(private val logger: Logger) {
     }
 
     fun start() {
+        println("Join address: ${localAddr.hostName}")
+
         if (membershipList.nodes.isEmpty()) {
-            println("Cluster join address: ${localAddr.hostName}")
-            self = Node(localAddr, Instant.now())
+            self = Node(socketAddr, Instant.now())
             membershipList = MembershipList(listOf(self))
         } else {
             self = getSelfNode()
         }
 
-        // start listening for incoming join connections
-        joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(InetAddress.getLocalHost(), JOIN_PORT))
-        joinRequestServerChannel.configureBlocking(false)
-
         startSendingHeartbeats()
 
         predecessors = getPredecessors()
 
-        successorActionChannels = buildSuccessorActionChannels()
-
-        predecessorHeartbeatChannel = DatagramChannel.open().bind(localAddr)
+        predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
 
-        predecessorServerChannel = ServerSocketChannel.open().bind(localAddr)
+        successorActionChannels = buildSuccessorActionChannels()
+
+        predecessorServerChannel = ServerSocketChannel.open().bind(socketAddr)
         predecessorServerChannel.configureBlocking(false)
+
+        joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
+        joinRequestServerChannel.configureBlocking(false)
 
         val selector = Selector.open()
 
-        successorActionChannels.forEach { it.register(selector, SelectionKey.OP_WRITE) }
-        successorHeartbeatChannels.forEach { it.register(selector, SelectionKey.OP_WRITE) }
+        successorActionChannels.forEach { channel ->
+            channel.register(selector, SelectionKey.OP_WRITE)
+                    .apply {
+                        attach(ChannelType.SUCCESSOR_ACTION)
+                    }
+        }
+
         predecessorHeartbeatChannel.register(selector, SelectionKey.OP_READ)
+                .apply {
+                    attach(ChannelType.PREDECESSOR_HEARTBEAT)
+                }
 
         predecessorServerChannel
                 .register(selector, SelectionKey.OP_ACCEPT)
                 .apply {
-                    attach(ServerSocketAttach.PREDECESSOR)
+                    attach(ChannelType.PREDECESSOR_SERVER)
                 }
 
         joinRequestServerChannel
                 .register(selector, SelectionKey.OP_ACCEPT)
                 .apply {
-                    attach(ServerSocketAttach.JOIN)
+                    attach(ChannelType.JOIN_SERVER)
                 }
 
         while (true) {
             // block until we have at least one channel ready to use
             selector.select()
 
+            val receivedActions = mutableListOf<Action>()
+            val successorActionSelectionKeys = mutableListOf<SelectionKey>()
+            val predecessorSocketChannels = mutableListOf<SocketChannel>()
+
             val selectionKeySet = selector.selectedKeys()
             for (key in selectionKeySet) {
+                val type = key.attachment() as ChannelType
+
                 when {
-                    key.isWritable -> {
-                        // use the attachment field to distinguish between datagram and socket channels
-                        TODO()
-                    }
+                    key.isWritable && type == ChannelType.SUCCESSOR_ACTION ->
+                        successorActionSelectionKeys.add(key)
 
-                    key.isReadable -> {
+                    key.isReadable && type == ChannelType.PREDECESSOR_HEARTBEAT ->
                         processPredecessorHeartbeat(key.channel() as DatagramChannel)
-                        selectionKeySet.remove(key)
+
+                    key.isReadable && type == ChannelType.PREDECESSOR_ACTION ->
+                        receivedActions.addAll(readActions(key.channel() as SocketChannel))
+
+                    key.isAcceptable && type == ChannelType.PREDECESSOR_SERVER -> {
+                        val serverChannel = key.channel() as ServerSocketChannel
+                        predecessorSocketChannels.add(serverChannel.accept())
                     }
 
-                    key.isAcceptable -> processConnectionAttempt(
-                            key.channel() as ServerSocketChannel,
-                            key.attachment() as ServerSocketAttach
-                    )
+                    key.isAcceptable && type == ChannelType.JOIN_SERVER ->
+                            receivedActions.add(
+                                    processJoinAndCreateAction(key.channel() as ServerSocketChannel)
+                            )
+
+                    else -> throw Throwable("unknown channel and operation!")
                 }
 
                 selectionKeySet.remove(key)
+
+                processActions(receivedActions)
+
+                // can't push actions to successorActionSelectionKeys here. It may not contain ALL successors
+                // how do we solve this??
             }
         }
     }
 
+    private fun processActions(actions: List<Action>) {
+        TODO()
+    }
+
+    private fun findNodeByAddress(addr: SocketAddress): Node? {
+        TODO()
+    }
+
+    private fun readActions(channel: SocketChannel): List<Action> {
+        TODO()
+    }
+
     private fun getSelfNode(): Node {
         membershipList.nodes.forEach { node ->
-            if (node.addr == localAddr) return node
+            if (node.addr == socketAddr) return node
         }
 
-        throw Throwable("couldn't find matching node for ${localAddr.hostName}")
+        throw Throwable("couldn't find matching node for ${socketAddr.hostName}")
     }
 
     private fun getPredecessors(): List<Node> {
@@ -210,26 +250,22 @@ class ClusterNode(private val logger: Logger) {
 //        TODO()
     }
 
-    private fun processConnectionAttempt(channel: ServerSocketChannel, attach: ServerSocketAttach) =
-            when (attach) {
-                ServerSocketAttach.PREDECESSOR -> processPredecessorConnection(channel)
-                ServerSocketAttach.JOIN -> processJoinConnection(channel)
-            }
+//    private fun processConnectionAttempt(channel: ServerSocketChannel, attach: ChannelType) =
+//            when (attach) {
+//                ChannelType.PREDECESSOR_SERVER -> processPredecessorConnection(channel)
+//                ChannelType.JOIN_SERVER -> processJoinConnection(channel)
+//            }
 
     private fun processPredecessorConnection(channel: ServerSocketChannel) {
         TODO()
     }
 
-    private fun processJoinConnection(channel: ServerSocketChannel) {
-        val newNode = channel.accept()
-               .use { socketChannel ->
-                   Node(socketChannel.remoteAddress, Instant.now())
-               }
+    private fun processJoinAndCreateAction(channel: ServerSocketChannel): Action.Join {
+        val node = channel.accept()
+                .use { socketChannel ->
+                    Node(socketChannel.remoteAddress, Instant.now())
+                }
 
-        val newList = MembershipList(
-                membershipList.nodes.plus(newNode)
-        )
-
-        logger.debug("tag", "$newList")
+        return Action.Join(node)
     }
 }
