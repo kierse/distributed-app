@@ -357,11 +357,11 @@ class ClusterNode(private val logger: Logger) {
         return succssors
     }
 
-    fun sendMessage(channel: SocketChannel, type:Actions.Reuqest.Type, node:Node){
+    fun sendMessage(channel: SocketChannel, type:Actions.Request.Type, node:Node){
         // set buffer
         val byteBuffer = ByteBuffer.allocate(1024)
         // build proto
-        val action = Actions.Reuqest.newBuilder()
+        val action = Actions.Request.newBuilder()
                 .setType(type)
                 .setTimestamp(Instant.now().toEpochMilli())
                 .setHostName(node.addr.toString())
@@ -384,13 +384,13 @@ class ClusterNode(private val logger: Logger) {
         }
         buf.flip()
 
-        val parsed = Actions.Reuqest.parseFrom(buf)
+        val parsed = Actions.Request.parseFrom(buf)
         when (parsed.getType()){
-            Actions.Reuqest.Type.JOIN ->
+            Actions.Request.Type.JOIN ->
                 println("joined")
-            Actions.Reuqest.Type.REMOVE ->
+            Actions.Request.Type.REMOVE ->
                 println("removed")
-            Actions.Reuqest.Type.DROP ->
+            Actions.Request.Type.DROP ->
                 println("dropped")
             else ->
                 println("else")
