@@ -5,7 +5,7 @@ package eece513;
 option java_package = "eece513";
 option java_outer_classname = "Actions";
 
-message Message{
+message Reuqest{
     enum Type{
         JOIN = 0;
         REMOVE = 1;
@@ -16,4 +16,13 @@ message Message{
     int64 timestamp = 2;
     string hostName = 3;
     int32 port = 4;
+}
+
+message MembershipList{
+    repeated Membership node = 1;
+}
+message Membership{
+    int64 timestamp = 1;
+    string hostName = 2;
+    int32 port = 3;
 }
