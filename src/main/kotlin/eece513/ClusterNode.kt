@@ -7,7 +7,6 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStream
 import java.io.InputStreamReader
-import java.lang.reflect.Member
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -98,7 +97,7 @@ class ClusterNode(private val logger: Logger) {
 
     private fun membershipListToBytes(list: MembershipList): ByteArray {
         // TODO
-        var message = Actions.MembershipList.newBuilder()
+        val message = Actions.MembershipList.newBuilder()
         list.nodes.forEach{
             val member = Actions.Membership
                     .newBuilder()
@@ -380,6 +379,8 @@ class ClusterNode(private val logger: Logger) {
                 println("removed")
             Actions.Reuqest.Type.DROP ->
                 println("dropped")
+            else ->
+                println("else")
         }
     }
 
