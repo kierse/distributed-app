@@ -40,8 +40,6 @@ class ClusterNode(private val logger: Logger) {
 
     private var membershipList = MembershipList(emptyList())
 
-    private var predecessors: List<Node> = emptyList()
-
     private var predecessorActionChannels = mutableListOf<SelectionKey>()
     private lateinit var predecessorHeartbeatChannel: DatagramChannel
     private lateinit var predecessorServerChannel: ServerSocketChannel
@@ -121,8 +119,6 @@ class ClusterNode(private val logger: Logger) {
 
         startSendingHeartbeats()
 
-        predecessors = getPredecessors()
-
         predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
 
@@ -174,6 +170,8 @@ class ClusterNode(private val logger: Logger) {
                         )
                     }
 
+                    // TODO this is broken!
+                    // TODO we don't send the membership list back to the join node!!
                     key.isAcceptable && type == ChannelType.JOIN_ACCEPT ->
                         actions.add(processJoinAndCreateAction(key.channel() as ServerSocketChannel))
 
@@ -186,6 +184,7 @@ class ClusterNode(private val logger: Logger) {
             if (actions.isNotEmpty()) {
                 // update local membership list
                 processActions(actions)
+
 
                 // send actions to collected predecessors
                 for (channel in predecessorChannels) {
