@@ -3,12 +3,20 @@ package eece513
 import eece513.model.Action
 import eece513.model.MembershipList
 import eece513.model.Node
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.lang.reflect.Member
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
 import java.time.Instant
 import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
+
+
+
 
 fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
@@ -17,7 +25,6 @@ fun main(args: Array<String>) {
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), PORT))
     }
-
     node.start()
 }
 
@@ -48,12 +55,14 @@ class ClusterNode(private val logger: Logger) {
     private val timer = Timer("successors heartbeat timer", true)
     private lateinit var heartbeatTimerTask: TimerTask
 
+    // what to do when it wants to join
     fun join(addr: SocketAddress) {
         // is this in blocking mode? I think it is
         // which is ok as we are connecting to the cluster
         SocketChannel
                 .open()
                 .use { channel ->
+                    // opens channel
                     val connected = channel.connect(addr)
 
                     if (!connected) throw Throwable("wasn't able to connect!")
@@ -78,7 +87,28 @@ class ClusterNode(private val logger: Logger) {
 
     private fun bytesToMembershipList(buffer: ByteBuffer): MembershipList {
         // TODO
+
+        val buf = ByteBuffer.allocate(buffer.capacity())
+        buf.flip()
+
+        val parsed = Actions.MembershipList.parseFrom(buf)
+        println(parsed)
         return MembershipList(emptyList())
+    }
+
+    private fun membershipListToBytes(list: MembershipList): ByteArray {
+        // TODO
+        var message = Actions.MembershipList.newBuilder()
+        list.nodes.forEach{
+            val member = Actions.Membership
+                    .newBuilder()
+                    .setHostName((it.addr as InetSocketAddress).hostName)
+                    .setPort(it.addr.port)
+                    .setTimestamp(it.joinedAt.toEpochMilli())
+                    .build()
+            message.addNode(member)
+        }
+        return message.build().toByteArray()
     }
 
     fun start() {
@@ -200,9 +230,34 @@ class ClusterNode(private val logger: Logger) {
     private fun getPredecessors(): List<Node> {
         if (membershipList.nodes.size < 2) return emptyList()
 
-        TODO()
+        //TODO()
+        val path =  "asdf"
+        val inputStream: InputStream = File(path).inputStream()
+        val lineList = mutableListOf<String>()
+
+        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
+
+        val newList = mutableListOf<String>()
+
+        val whatismyip = URL("http://checkip.amazonaws.com")
+        val buffer = BufferedReader(InputStreamReader(
+                whatismyip.openStream()))
+
+        var ip = buffer.readLine() //you get the IP as a String
+        ip = ip.replace(".","-")
+        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
+
+
+        val position = lineList.indexOf(ip)
+        val size = lineList.size
+
+        newList.add(lineList.elementAt(position%size))
+        newList.add(lineList.elementAt((position+1)%size))
+        newList.add(lineList.elementAt((position+2)%size))
+        return emptyList()
     }
 
+    // connect to successors
     private fun buildSuccessorActionChannels(): List<SocketChannel> {
         if (membershipList.nodes.size < 2) return emptyList()
 
@@ -211,6 +266,7 @@ class ClusterNode(private val logger: Logger) {
         TODO()
     }
 
+    // send heartbeat
     private fun startSendingHeartbeats() {
         if (membershipList.nodes.size < 2) return
 
@@ -244,6 +300,7 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
+    // what to do when you get heartbeat
     private fun processPredecessorHeartbeat(channel: DatagramChannel) {
         println("received packet!")
         channel.receive(ByteBuffer.allocate(10))
@@ -268,4 +325,62 @@ class ClusterNode(private val logger: Logger) {
 
         return Action.Join(node)
     }
+
+    // can return InetAddress/InetSocketAddress
+    fun ReturnThreeSuccessors(membershipList: MembershipList): List<Node> {
+
+//        val whatismyip = URL("http://checkip.amazonaws.com")
+//        val buffer = BufferedReader(InputStreamReader(whatismyip.openStream()))
+//        var ip = buffer.readLine() //you get the IP as a String
+//        ip = ip.replace(".","-")
+//        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
+
+        val nodes = membershipList.nodes
+        val position = nodes.indexOf(getSelfNode())
+        val size = nodes.size
+        val succssors = mutableListOf<Node>()
+        succssors.add(nodes.elementAt(position % size))
+        succssors.add(nodes.elementAt((position + 1) % size))
+        succssors.add(nodes.elementAt((position + 2) % size))
+        return succssors
+    }
+
+    fun sendMessage(channel: SocketChannel, type:Actions.Reuqest.Type, node:Node){
+        // set buffer
+        val byteBuffer = ByteBuffer.allocate(1024)
+        // build proto
+        val action = Actions.Reuqest.newBuilder()
+                .setType(type)
+                .setTimestamp(Instant.now().toEpochMilli())
+                .setHostName(node.addr.toString())
+                .setPort((node.addr as InetSocketAddress).port)
+                .build()
+        // put proto into buffer
+
+        byteBuffer.put(action.toByteArray())
+        // flip buffer
+        byteBuffer.flip()
+        // write to socket
+        channel.write(byteBuffer)
+    }
+
+    fun readMessage(channel:SocketChannel){
+        val buf = ByteBuffer.allocate(1024)
+        val numBytesRead = channel.read(buf)
+        if (numBytesRead == -1) {
+            // quit
+        }
+        buf.flip()
+
+        val parsed = Actions.Reuqest.parseFrom(buf)
+        when (parsed.getType()){
+            Actions.Reuqest.Type.JOIN ->
+                println("joined")
+            Actions.Reuqest.Type.REMOVE ->
+                println("removed")
+            Actions.Reuqest.Type.DROP ->
+                println("dropped")
+        }
+    }
+
 }
