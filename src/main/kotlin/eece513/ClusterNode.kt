@@ -267,25 +267,7 @@ class ClusterNode(private val logger: Logger) {
         if (membershipList.nodes.size < 2) return
 
         val nodes = membershipList.nodes
-        val successors = mutableListOf<Node>()
-
-        var i = 0
-        var found = false
-
-        while (true) {
-            if (nodes[i] == self) {
-                if (successors.size == 0) {
-                    found = true
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            if (found) successors.add(nodes[i])
-            if (successors.size == 3) break
-            i = if (nodes.size > i + 1) i + 1 else 0
-        }
+        val successors = getPredecessorIndices().map { nodes[it] }
 
         heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
             successors.forEach { successor ->
@@ -294,6 +276,50 @@ class ClusterNode(private val logger: Logger) {
                 }
             }
         }
+    }
+
+    private fun getPredecessorIndices(): IntArray {
+        val nodes = membershipList.nodes
+
+        val size = nodes.size
+        val indices = intArrayOf(size - 1, size - 2, size - 3)
+
+        var found = false
+        for (i in 0 until size) {
+            if (found) break
+            if (nodes[i] == self) {
+                found = true
+            }
+
+            // shuffle everything to the right
+            indices[1] = indices[2]
+            indices[1] = indices[0]
+            indices[0] = i
+        }
+
+        return indices
+    }
+
+    private fun getSuccessorIndices(): IntArray {
+        val nodes = membershipList.nodes
+
+        val size = nodes.size
+        val indices = intArrayOf(0, 1, 2)
+
+        var found = false
+        for (i in 0 until size) {
+            if (found) break
+            if (nodes[i] == self) {
+                found = true
+            }
+
+            // shuffle everything to the right
+            indices[1] = indices[2]
+            indices[1] = indices[0]
+            indices[0] = i
+        }
+
+        return indices
     }
 
     // what to do when you get heartbeat
