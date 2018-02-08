@@ -3,10 +3,6 @@ package eece513
 import eece513.model.Action
 import eece513.model.MembershipList
 import eece513.model.Node
-import java.io.BufferedReader
-import java.io.File
-import java.io.InputStream
-import java.io.InputStreamReader
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -19,7 +15,7 @@ fun main(args: Array<String>) {
     val node = ClusterNode(logger)
 
     if (args.isNotEmpty()) {
-        node.join(InetSocketAddress(InetAddress.getByName(args.first()), PORT))
+        node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
     node.start()
 }
@@ -33,6 +29,8 @@ class ClusterNode(private val logger: Logger) {
         SUCCESSOR_ACTION_READ,
         SUCCESSOR_HEARTBEAT_WRITE
     }
+
+    private val tag = ClusterNode::class.java.simpleName
 
     private val localAddr = InetAddress.getLocalHost()
 //    private val localAddr = InetAddress.getByName("10.0.0.34")
@@ -69,33 +67,42 @@ class ClusterNode(private val logger: Logger) {
                         channel.read(msgLengthBuffer)
                     }
 
-                    msgLengthBuffer.position(0)
-                    val msgBuffer = ByteBuffer.allocate(msgLengthBuffer.short.toInt())
+                    msgLengthBuffer.flip()
+                    val header = msgLengthBuffer.short.toInt()
+
+                    logger.debug(tag, "join response header: $header")
+
+                    val msgBuffer = ByteBuffer.allocate(header)
 
                     while (msgBuffer.hasRemaining()) {
                         channel.read(msgBuffer)
                     }
 
-                    msgBuffer.position(0)
+                    logger.debug(tag, "read ${msgBuffer.position()} bytes from join server")
+
+                    msgBuffer.flip()
                     membershipList = bytesToMembershipList(msgBuffer)
+
+                    logger.debug(tag, "membership list: $membershipList")
                 }
     }
 
     private fun bytesToMembershipList(buffer: ByteBuffer): MembershipList {
-        // TODO
+        val parsed = Actions.MembershipList.parseFrom(buffer)
 
-        val buf = ByteBuffer.allocate(buffer.capacity())
-        buf.flip()
+        val nodes = mutableListOf<Node>()
+        for (membership in parsed.nodeList) {
+            val addr = InetSocketAddress(membership.hostName, membership.port)
+            nodes.add(Node(addr, Instant.ofEpochMilli(membership.timestamp)))
+        }
 
-        val parsed = Actions.MembershipList.parseFrom(buf)
-        println(parsed)
-        return MembershipList(emptyList())
+        return MembershipList(nodes)
     }
 
-    private fun membershipListToBytes(list: MembershipList): ByteArray {
-        // TODO
+    private fun membershipListToBytes(): ByteArray {
         val message = Actions.MembershipList.newBuilder()
-        list.nodes.forEach{
+
+        membershipList.nodes.forEach {
             val member = Actions.Membership
                     .newBuilder()
                     .setHostName((it.addr as InetSocketAddress).hostName)
@@ -104,6 +111,7 @@ class ClusterNode(private val logger: Logger) {
                     .build()
             message.addNode(member)
         }
+
         return message.build().toByteArray()
     }
 
@@ -146,6 +154,7 @@ class ClusterNode(private val logger: Logger) {
             selector.select()
 
             val actions = mutableListOf<Action>()
+            val joinChannels = mutableListOf<SocketChannel>()
             val predecessorChannels = mutableListOf<SocketChannel>()
 
             val selectionKeySet = selector.selectedKeys()
@@ -170,10 +179,16 @@ class ClusterNode(private val logger: Logger) {
                         )
                     }
 
-                    // TODO this is broken!
-                    // TODO we don't send the membership list back to the join node!!
-                    key.isAcceptable && type == ChannelType.JOIN_ACCEPT ->
-                        actions.add(processJoinAndCreateAction(key.channel() as ServerSocketChannel))
+                    key.isAcceptable && type == ChannelType.JOIN_ACCEPT -> {
+                        val serverChannel = key.channel() as ServerSocketChannel
+                        val channel = serverChannel.accept()
+
+                        logger.info(tag, "received join request from ${channel.remoteAddress}")
+
+                        actions.add(buildJoinAction(channel.remoteAddress))
+                        joinChannels.add(channel)
+                    }
+
 
                     else -> throw Throwable("unknown channel and operation!")
                 }
@@ -185,6 +200,12 @@ class ClusterNode(private val logger: Logger) {
                 // update local membership list
                 processActions(actions)
 
+                // process joins and send membership list
+                for (channel in joinChannels) {
+                    channel.use {
+                        pushMembershipListNewNode(channel)
+                    }
+                }
 
                 // send actions to collected predecessors
                 for (channel in predecessorChannels) {
@@ -200,11 +221,38 @@ class ClusterNode(private val logger: Logger) {
     }
 
     private fun rebuildRings() {
-        TODO()
+//        TODO()
     }
 
     private fun processActions(actions: List<Action>) {
-        TODO()
+        val newNodes = mutableListOf<Node>()
+        val staleNodes = mutableListOf<Node>()
+
+        for (action in actions.toSet()) {
+            when (action.type) {
+                Action.Type.JOIN -> {
+                    logger.debug(tag, "adding ${action.node.addr} to membership list")
+                    newNodes.add(action.node)
+                }
+
+                Action.Type.LEAVE -> {
+                    logger.debug(tag, "removing ${action.node.addr} from membership list")
+                    staleNodes.add(action.node)
+                }
+
+                Action.Type.DROP -> {
+                    logger.debug(tag, "dropping ${action.node.addr} from membership list")
+                    staleNodes.add(action.node)
+                }
+            }
+        }
+
+        val newList = membershipList
+                        .nodes
+                        .minus(staleNodes)
+                        .plus(newNodes)
+
+        membershipList = membershipList.copy(nodes = newList)
     }
 
     private fun readActions(channel: SocketChannel): List<Action> {
@@ -213,6 +261,24 @@ class ClusterNode(private val logger: Logger) {
 
     private fun pushActionsToPredecessor(channel: SocketChannel, actions: List<Action>) {
         TODO()
+    }
+
+    private fun pushMembershipListNewNode(channel: SocketChannel) {
+        val byteArray = membershipListToBytes()
+        val count = byteArray.size.toShort()
+
+        // Create message buffer
+        // Note: add 2 extra bytes for message header
+        val buffer = ByteBuffer.allocate(count + 2)
+        buffer.clear()
+        buffer.putShort(count)
+        buffer.put(byteArray)
+        buffer.flip()
+
+        logger.debug(tag, "writing $count bytes to ${channel.remoteAddress} join channel")
+        while (buffer.hasRemaining()) {
+            channel.write(buffer)
+        }
     }
 
     private fun getSelfNode(): Node {
@@ -264,7 +330,10 @@ class ClusterNode(private val logger: Logger) {
 
     // send heartbeat
     private fun startSendingHeartbeats() {
-        if (membershipList.nodes.size < 2) return
+        if (membershipList.nodes.size < 2) {
+            logger.debug(tag, "Nothing to do, membership list is empty!")
+            return
+        }
 
         val nodes = membershipList.nodes
         val successors = getPredecessorIndices().map { nodes[it] }
@@ -284,20 +353,20 @@ class ClusterNode(private val logger: Logger) {
         val size = nodes.size
         val indices = intArrayOf(size - 1, size - 2, size - 3)
 
-        var found = false
         for (i in 0 until size) {
-            if (found) break
-            if (nodes[i] == self) {
-                found = true
-            }
+            if (nodes[i] == self) break
 
             // shuffle everything to the right
-            indices[1] = indices[2]
+            indices[2] = indices[1]
             indices[1] = indices[0]
             indices[0] = i
         }
 
-        return indices
+        return when (size) {
+            2 -> indices.copyOf(1)
+            3 -> indices.copyOf(2)
+            else -> indices
+        }
     }
 
     private fun getSuccessorIndices(): IntArray {
@@ -306,20 +375,20 @@ class ClusterNode(private val logger: Logger) {
         val size = nodes.size
         val indices = intArrayOf(0, 1, 2)
 
-        var found = false
-        for (i in 0 until size) {
-            if (found) break
-            if (nodes[i] == self) {
-                found = true
-            }
+        for (i in (0 until size).reversed()) {
+            if (nodes[i] == self) break
 
             // shuffle everything to the right
-            indices[1] = indices[2]
+            indices[2] = indices[1]
             indices[1] = indices[0]
             indices[0] = i
         }
 
-        return indices
+        return when (size) {
+            2 -> indices.copyOf(1)
+            3 -> indices.copyOf(2)
+            else -> indices
+        }
     }
 
     // what to do when you get heartbeat
@@ -329,14 +398,7 @@ class ClusterNode(private val logger: Logger) {
 //        TODO()
     }
 
-    private fun processJoinAndCreateAction(channel: ServerSocketChannel): Action.Join {
-        val node = channel.accept()
-                .use { socketChannel ->
-                    Node(socketChannel.remoteAddress, Instant.now())
-                }
-
-        return Action.Join(node)
-    }
+    private fun buildJoinAction(addr: SocketAddress): Action.Join = Action.Join(Node(addr, Instant.now()))
 
     // can return InetAddress/InetSocketAddress
     fun ReturnThreeSuccessors(membershipList: MembershipList): List<Node> {
