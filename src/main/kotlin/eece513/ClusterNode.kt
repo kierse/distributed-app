@@ -17,6 +17,7 @@ fun main(args: Array<String>) {
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
+
     node.start()
 }
 
@@ -65,28 +66,10 @@ class ClusterNode(private val logger: Logger) {
 
                     localPort = channel.socket().localPort
 
-                    // get length of membership list (in bytes)
-                    val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
-                    while (msgLengthBuffer.hasRemaining()) {
-                        channel.read(msgLengthBuffer)
-                    }
+                    val bytes = readMessage(channel)
+                    if (bytes.remaining() == 0) throw Throwable("no response from join server!")
 
-                    msgLengthBuffer.flip()
-                    val header = msgLengthBuffer.short.toInt()
-
-                    logger.debug(tag, "join response header: $header")
-
-                    val msgBuffer = ByteBuffer.allocate(header)
-
-                    while (msgBuffer.hasRemaining()) {
-                        channel.read(msgBuffer)
-                    }
-
-                    logger.debug(tag, "read ${msgBuffer.position()} bytes from join server")
-
-                    msgBuffer.flip()
-                    membershipList = bytesToMembershipList(msgBuffer)
-
+                    membershipList = bytesToMembershipList(bytes)
                     logger.debug(tag, "membership list: $membershipList")
                 }
     }
@@ -235,7 +218,7 @@ class ClusterNode(private val logger: Logger) {
             // process joins and send membership list
             for (channel in joinChannels) {
                 channel.use {
-                    pushMembershipListNewNode(channel)
+                    sendMembershipList(channel)
                 }
             }
 
@@ -243,7 +226,7 @@ class ClusterNode(private val logger: Logger) {
             for (channel in predecessorChannels) {
                 pendingPredecessorActions.remove(channel.remoteAddress)
                         ?.let { list ->
-                            pushActionsToPredecessor(channel, list)
+                            sendActions(channel, list)
                         }
             }
 
@@ -311,31 +294,6 @@ class ClusterNode(private val logger: Logger) {
         membershipList = membershipList.copy(nodes = newList)
     }
 
-    private fun readActions(channel: SocketChannel): List<Action> {
-        TODO()
-    }
-
-    private fun pushActionsToPredecessor(channel: SocketChannel, actions: List<Action>) {
-        TODO()
-    }
-
-    private fun pushMembershipListNewNode(channel: SocketChannel) {
-        val byteArray = membershipListToBytes()
-        val count = byteArray.size.toShort()
-
-        // Create message buffer
-        // Note: add 2 extra bytes for message header
-        val buffer = ByteBuffer.allocate(count + 2)
-        buffer.clear()
-        buffer.putShort(count)
-        buffer.put(byteArray)
-        buffer.flip()
-
-        logger.debug(tag, "writing $count bytes to ${channel.remoteAddress} join channel")
-        while (buffer.hasRemaining()) {
-            channel.write(buffer)
-        }
-    }
 
     private fun getSelfNode(): Node {
         membershipList.nodes.forEach { node ->
@@ -343,45 +301,6 @@ class ClusterNode(private val logger: Logger) {
         }
 
         throw Throwable("couldn't find matching node for ${socketAddr.hostName}")
-    }
-
-//    private fun getPredecessors(): List<Node> {
-//        if (membershipList.nodes.size < 2) return emptyList()
-//
-//        //TODO()
-//        val path =  "asdf"
-//        val inputStream: InputStream = File(path).inputStream()
-//        val lineList = mutableListOf<String>()
-//
-//        inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it)} }
-//
-//        val newList = mutableListOf<String>()
-//
-//        val whatismyip = URL("http://checkip.amazonaws.com")
-//        val buffer = BufferedReader(InputStreamReader(
-//                whatismyip.openStream()))
-//
-//        var ip = buffer.readLine() //you get the IP as a String
-//        ip = ip.replace(".","-")
-//        ip = "ec2-"+ ip + ".ca-central-1.compute.amazonaws.com"
-//
-//
-//        val position = lineList.indexOf(ip)
-//        val size = lineList.size
-//
-//        newList.add(lineList.elementAt(position%size))
-//        newList.add(lineList.elementAt((position+1)%size))
-//        newList.add(lineList.elementAt((position+2)%size))
-//        return emptyList()
-//    }
-
-    // connect to successors
-    private fun buildSuccessorActionChannels(): List<SocketChannel> {
-        if (membershipList.nodes.size < 2) return emptyList()
-
-        // put channels in non-blocking mode
-        // channel.configureBlocking(false)
-        TODO()
     }
 
     private fun restartHeartbeatTimer() {
@@ -408,50 +327,6 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
-//    private fun getPredecessorIndices(): IntArray {
-//        val nodes = membershipList.nodes
-//
-//        val size = nodes.size
-//        val indices = intArrayOf(size - 1, size - 2, size - 3)
-//
-//        for (i in 0 until size) {
-//            if (nodes[i] == self) break
-//
-//            // shuffle everything to the right
-//            indices[2] = indices[1]
-//            indices[1] = indices[0]
-//            indices[0] = i
-//        }
-//
-//        return when (size) {
-//            2 -> indices.copyOf(1)
-//            3 -> indices.copyOf(2)
-//            else -> indices
-//        }
-//    }
-//
-//    private fun getSuccessorIndices(): IntArray {
-//        val nodes = membershipList.nodes
-//
-//        val size = nodes.size
-//        val indices = intArrayOf(0, 1, 2)
-//
-//        for (i in (0 until size).reversed()) {
-//            if (nodes[i] == self) break
-//
-//            // shuffle everything to the right
-//            indices[2] = indices[1]
-//            indices[1] = indices[0]
-//            indices[0] = i
-//        }
-//
-//        return when (size) {
-//            2 -> indices.copyOf(1)
-//            3 -> indices.copyOf(2)
-//            else -> indices
-//        }
-//    }
-
     // what to do when you get heartbeat
     private fun processPredecessorHeartbeat(channel: DatagramChannel) {
         val remoteAddr = channel.receive(ByteBuffer.allocate(0))
@@ -465,16 +340,16 @@ class ClusterNode(private val logger: Logger) {
         val position = nodes.indexOf(getSelfNode())
         val size = nodes.size
 
-        val predeccessors = mutableListOf<Node>()
-        predeccessors.add(nodes.elementAt(Math.floorMod(position - 1, size)))
-        predeccessors.add(nodes.elementAt(Math.floorMod(position - 2, size)))
-        predeccessors.add(nodes.elementAt(Math.floorMod(position - 3, size)))
+        val predecessors = mutableListOf<Node>()
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 1, size)))
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 2, size)))
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 3, size)))
 
         return when (size) {
             1 -> emptyList()
-            2 -> predeccessors.subList(0, 1)
-            3 -> predeccessors.subList(0, 2)
-            else -> predeccessors
+            2 -> predecessors.subList(0, 1)
+            3 -> predecessors.subList(0, 2)
+            else -> predecessors
         }
     }
 
@@ -496,44 +371,94 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
-    fun sendMessage(channel: SocketChannel, type:Actions.Request.Type, node:Node){
-        // set buffer
-        val byteBuffer = ByteBuffer.allocate(1024)
-        // build proto
-        val action = Actions.Request.newBuilder()
-                .setType(type)
-                .setTimestamp(Instant.now().toEpochMilli())
-                .setHostName(node.addr.toString())
-                .setPort((node.addr as InetSocketAddress).port)
-                .build()
-        // put proto into buffer
+    private fun readActions(channel: ReadableByteChannel): List<Action> {
+        val actions = mutableListOf<Action>()
 
-        byteBuffer.put(action.toByteArray())
-        // flip buffer
-        byteBuffer.flip()
-        // write to socket
-        channel.write(byteBuffer)
+        do {
+            val bytes = readMessage(channel)
+            if (bytes.remaining() == 0) break
+
+            val parsed = Actions.Request.parseFrom(bytes)
+
+            val addr = InetSocketAddress(parsed.hostName, parsed.port)
+            val node = Node(addr, Instant.ofEpochMilli(parsed.timestamp))
+
+            val action: Action = when (parsed.type) {
+                Actions.Request.Type.JOIN -> Action.Join(node)
+                Actions.Request.Type.REMOVE -> Action.Leave(node)
+                Actions.Request.Type.DROP -> Action.Drop(node)
+
+                else -> throw IllegalArgumentException("unrecognized type! ${parsed.type.name}")
+            }
+
+            actions.add(action)
+        } while (true)
+
+        return actions
     }
 
-    fun readMessage(channel:SocketChannel){
-        val buf = ByteBuffer.allocate(1024)
-        val numBytesRead = channel.read(buf)
-        if (numBytesRead == -1) {
-            // quit
-        }
-        buf.flip()
+    private fun sendActions(channel: SocketChannel, actions: List<Action>) {
+        for (action in actions) {
+            val type = when (action.type) {
+                Action.Type.JOIN -> Actions.Request.Type.JOIN
+                Action.Type.LEAVE -> Actions.Request.Type.REMOVE
+                Action.Type.DROP -> Actions.Request.Type.DROP
+            }
 
-        val parsed = Actions.Request.parseFrom(buf)
-        when (parsed.getType()){
-            Actions.Request.Type.JOIN ->
-                println("joined")
-            Actions.Request.Type.REMOVE ->
-                println("removed")
-            Actions.Request.Type.DROP ->
-                println("dropped")
-            else ->
-                println("else")
+            val addr = action.node.addr as InetSocketAddress
+            val request = Actions.Request.newBuilder()
+                    .setType(type)
+                    .setTimestamp(Instant.now().toEpochMilli())
+                    .setHostName(addr.hostString)
+                    .setPort(addr.port)
+                    .build()
+
+            sendMessage(channel, request.toByteArray())
         }
     }
 
+    private fun sendMembershipList(channel: SocketChannel) = sendMessage(channel, membershipListToBytes())
+
+    private fun sendMessage(channel: WritableByteChannel, bytes: ByteArray) {
+        val count = bytes.size.toShort()
+
+        // Create message buffer
+        // Note: add 2 extra bytes for message header
+        val buffer = ByteBuffer.allocate(count + 2)
+        buffer.clear()
+        buffer.putShort(count)
+        buffer.put(bytes)
+        buffer.flip()
+
+        while (buffer.hasRemaining()) {
+            channel.write(buffer)
+        }
+        logger.debug(tag, "sendMessage: wrote $count byte(s) to channel")
+    }
+
+    private fun readMessage(channel: ReadableByteChannel): ByteBuffer {
+        val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
+        msgLengthBuffer.clear()
+
+        while (msgLengthBuffer.hasRemaining()) {
+            channel.read(msgLengthBuffer)
+        }
+
+        if (msgLengthBuffer.position() == 0) return ByteBuffer.allocate(0)
+
+        logger.debug(tag, "readMessage: read ${msgLengthBuffer.position()} header byte(s)")
+
+        msgLengthBuffer.flip()
+        val header = msgLengthBuffer.short.toInt()
+
+        logger.debug(tag, "readMessage: message body is $header byte(s)")
+
+        val msgBuffer = ByteBuffer.allocate(header)
+        while (msgBuffer.hasRemaining()) {
+            channel.read(msgBuffer)
+        }
+
+        logger.debug(tag, "readMessage: read ${msgBuffer.position()} message body byte(s)")
+        return msgBuffer.flip()
+    }
 }
