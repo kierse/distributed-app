@@ -40,6 +40,8 @@ sourceSets {
 dependencies {
     // kotlin
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.1'
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.22.1'
 
     // protobuf
     compile "com.google.protobuf:protobuf-gradle-plugin:0.8.4"
@@ -54,6 +56,12 @@ dependencies {
     // mockito
     testCompile group: 'org.mockito', name: 'mockito-core', version: '2.13.0'
     testCompile group: 'com.nhaarman', name: 'mockito-kotlin', version: '1.5.0'
+}
+
+kotlin {
+    experimental {
+        coroutines 'enable'
+    }
 }
 
 protobuf {
