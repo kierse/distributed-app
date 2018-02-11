@@ -8,13 +8,14 @@ import java.nio.ByteBuffer
 import java.nio.channels.*
 import java.time.Instant
 import java.util.*
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
-    val node = ClusterNode(logger)
+    val messageReader = MessageReader(logger)
+    val messageBuilder = MessageBuilder()
 
+    val node = ClusterNode(messageReader, messageBuilder, logger)
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
@@ -22,7 +23,11 @@ fun main(args: Array<String>) {
     node.start()
 }
 
-class ClusterNode(private val logger: Logger) {
+class ClusterNode(
+        private val messageReader: MessageReader,
+        private val messageBuilder: MessageBuilder,
+        private val logger: Logger
+) {
     private enum class ChannelType {
         JOIN_ACCEPT,
         PREDECESSOR_ACCEPT,
@@ -35,13 +40,13 @@ class ClusterNode(private val logger: Logger) {
     private val tag = ClusterNode::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
-    private val localAddr = InetAddress.getLocalHost()
+//    private val localAddr = InetAddress.getLocalHost()
+    private val localAddr = InetAddress.getByName("127.0.0.1")
     private var localPort: Int = -1
 
     private var membershipList = MembershipList(emptyList())
     private lateinit var successorNodes: List<Node>
     private lateinit var predecessorNodes: List<Node>
-    private val predecessorNodesRef = AtomicReference<List<Node>>(emptyList())
 
     private var predecessorActionChannels = mutableListOf<SelectionKey>()
     private lateinit var predecessorHeartbeatChannel: DatagramChannel
@@ -68,16 +73,17 @@ class ClusterNode(private val logger: Logger) {
 
                     localPort = channel.socket().localPort
 
-                    val bytes = readMessage(channel)
-                    if (bytes.remaining() == 0) throw Throwable("no response from join server!")
+                    val bytes = messageReader.read(channel)
+
+                    if (bytes.isEmpty()) throw Throwable("no response from join server!")
 
                     membershipList = bytesToMembershipList(bytes)
                     logger.debug(tag, "membership list: $membershipList")
                 }
     }
 
-    private fun bytesToMembershipList(buffer: ByteBuffer): MembershipList {
-        val parsed = Actions.MembershipList.parseFrom(buffer)
+    private fun bytesToMembershipList(bytes: ByteArray): MembershipList {
+        val parsed = Actions.MembershipList.parseFrom(bytes)
 
         val nodes = mutableListOf<Node>()
         for (membership in parsed.nodeList) {
@@ -128,7 +134,6 @@ class ClusterNode(private val logger: Logger) {
         logger.debug(tag, "found self node: $self")
 
         successorNodes = returnThreeSuccessors()
-        predecessorNodesRef.set(returnThreePredecessors())
 
         predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
@@ -386,8 +391,8 @@ class ClusterNode(private val logger: Logger) {
         val actions = mutableListOf<Action>()
 
         do {
-            val bytes = readMessage(channel)
-            if (bytes.remaining() == 0) break
+            val bytes = messageReader.read(channel)
+            if (bytes.isEmpty()) break
 
             val parsed = Actions.Request.parseFrom(bytes)
 
@@ -445,31 +450,5 @@ class ClusterNode(private val logger: Logger) {
             channel.write(buffer)
         }
         logger.debug(tag, "sendMessage: wrote $count byte(s) to channel")
-    }
-
-    private fun readMessage(channel: ReadableByteChannel): ByteBuffer {
-        val msgLengthBuffer = ByteBuffer.allocate(MESSAGE_HEADER_SIZE)
-        msgLengthBuffer.clear()
-
-        while (msgLengthBuffer.hasRemaining()) {
-            channel.read(msgLengthBuffer)
-        }
-
-        if (msgLengthBuffer.position() == 0) return ByteBuffer.allocate(0)
-
-        logger.debug(tag, "readMessage: read ${msgLengthBuffer.position()} header byte(s)")
-
-        msgLengthBuffer.flip()
-        val header = msgLengthBuffer.short.toInt()
-
-        logger.debug(tag, "readMessage: message body is $header byte(s)")
-
-        val msgBuffer = ByteBuffer.allocate(header)
-        while (msgBuffer.hasRemaining()) {
-            channel.read(msgBuffer)
-        }
-
-        logger.debug(tag, "readMessage: read ${msgBuffer.position()} message body byte(s)")
-        return msgBuffer.flip()
     }
 }
