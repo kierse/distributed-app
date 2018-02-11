@@ -101,7 +101,7 @@ class ClusterNode(
         membershipList.nodes.forEach {
             val member = Actions.Membership
                     .newBuilder()
-                    .setHostName((it.addr as InetSocketAddress).hostName)
+                    .setHostName(it.addr.hostName)
                     .setPort(it.addr.port)
                     .setTimestamp(it.joinedAt.toEpochMilli())
                     .build()
@@ -350,7 +350,9 @@ class ClusterNode(
         // TODO
     }
 
-    private fun buildJoinAction(addr: SocketAddress): Action.Join = Action.Join(Node(addr, Instant.now()))
+    private fun buildJoinAction(addr: SocketAddress): Action.Join {
+        return Action.Join(Node(addr as InetSocketAddress, Instant.now()))
+    }
 
     private fun returnThreePredecessors(): List<Node> {
         val nodes = membershipList.nodes
@@ -422,7 +424,7 @@ class ClusterNode(
                 Action.Type.DROP -> Actions.Request.Type.DROP
             }
 
-            val addr = action.node.addr as InetSocketAddress
+            val addr = action.node.addr
             val request = Actions.Request.newBuilder()
                     .setType(type)
                     .setTimestamp(Instant.now().toEpochMilli())
