@@ -14,8 +14,9 @@ fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
+    val actionFactory = ActionFactory(messageReader, logger)
 
-    val node = ClusterNode(messageReader, messageBuilder, logger)
+    val node = ClusterNode(messageReader, messageBuilder, actionFactory, logger)
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
@@ -27,6 +28,7 @@ class ClusterNode(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageReader: MessageReader,
         private val messageBuilder: MessageBuilder,
+        private val actionFactory: ActionFactory,
         private val logger: Logger
 ) {
     private enum class ChannelType {
@@ -192,7 +194,7 @@ class ClusterNode(
 
                     key.isReadable && type == ChannelType.SUCCESSOR_ACTION_READ -> {
                         val channel = key.channel() as SocketChannel
-                        val actions = readActions(channel)
+                        val actions = actionFactory.build(channel)
 
                         pendingPredecessorActions.getValue(channel.remoteAddress).addAll(actions)
                         localActions.addAll(actions)
@@ -388,32 +390,6 @@ class ClusterNode(
             3 -> successors.subList(0, 2)
             else -> successors
         }
-    }
-
-    private fun readActions(channel: ReadableByteChannel): List<Action> {
-        val actions = mutableListOf<Action>()
-
-        do {
-            val bytes = messageReader.read(channel)
-            if (bytes.isEmpty()) break
-
-            val parsed = Actions.Request.parseFrom(bytes)
-
-            val addr = InetSocketAddress(parsed.hostName, parsed.port)
-            val node = Node(addr, Instant.ofEpochMilli(parsed.timestamp))
-
-            val action: Action = when (parsed.type) {
-                Actions.Request.Type.JOIN -> Action.Join(node)
-                Actions.Request.Type.REMOVE -> Action.Leave(node)
-                Actions.Request.Type.DROP -> Action.Drop(node)
-
-                else -> throw IllegalArgumentException("unrecognized type! ${parsed.type.name}")
-            }
-
-            actions.add(action)
-        } while (true)
-
-        return actions
     }
 
     private fun sendActions(channel: SocketChannel, actions: List<Action>) {
