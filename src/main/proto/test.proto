@@ -28,7 +28,7 @@ message MembershipList {
 }
 
 message Membership {
-    int64 timestamp = 1;
+    Timestamp timestamp = 1;
     string hostName = 2;
     int32 port = 3;
 }

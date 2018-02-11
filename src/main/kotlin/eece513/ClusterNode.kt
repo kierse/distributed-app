@@ -15,8 +15,11 @@ fun main(args: Array<String>) {
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
     val actionFactory = ActionFactory(messageReader, logger)
+    val membershiplistFactory = MembershipListFactory(messageReader)
 
-    val node = ClusterNode(messageReader, messageBuilder, actionFactory, logger)
+    val node = ClusterNode(
+            messageReader, messageBuilder, actionFactory, membershiplistFactory, logger
+    )
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
@@ -29,6 +32,7 @@ class ClusterNode(
         private val messageReader: MessageReader,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
+        private val membershipListFactory: MembershipListFactory,
         private val logger: Logger
 ) {
     private enum class ChannelType {
@@ -76,36 +80,26 @@ class ClusterNode(
 
                     localPort = channel.socket().localPort
 
-                    val bytes = messageReader.read(channel)
-
-                    if (bytes.isEmpty()) throw Throwable("no response from join server!")
-
-                    membershipList = bytesToMembershipList(bytes)
+                    membershipList = membershipListFactory.build(channel) ?:
+                            throw Throwable("no response from join server!")
                     logger.debug(tag, "membership list: $membershipList")
                 }
-    }
-
-    private fun bytesToMembershipList(bytes: ByteArray): MembershipList {
-        val parsed = Actions.MembershipList.parseFrom(bytes)
-
-        val nodes = mutableListOf<Node>()
-        for (membership in parsed.nodeList) {
-            val addr = InetSocketAddress(membership.hostName, membership.port)
-            nodes.add(Node(addr, Instant.ofEpochMilli(membership.timestamp)))
-        }
-
-        return MembershipList(nodes)
     }
 
     private fun membershipListToBytes(): ByteArray {
         val message = Actions.MembershipList.newBuilder()
 
         membershipList.nodes.forEach {
+            val timestamp = Actions.Timestamp.newBuilder()
+                    .setSecondsSinceEpoch(it.joinedAt.epochSecond)
+                    .setNanoSeconds(it.joinedAt.nano)
+                    .build()
+
             val member = Actions.Membership
                     .newBuilder()
                     .setHostName(it.addr.hostName)
                     .setPort(it.addr.port)
-                    .setTimestamp(it.joinedAt.toEpochMilli())
+                    .setTimestamp(timestamp)
                     .build()
             message.addNode(member)
         }
