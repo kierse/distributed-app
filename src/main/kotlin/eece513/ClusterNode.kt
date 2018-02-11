@@ -15,10 +15,11 @@ fun main(args: Array<String>) {
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
     val actionFactory = ActionFactory(messageReader, logger)
-    val membershiplistFactory = MembershipListFactory(messageReader)
+    val membershipListFactory = MembershipListFactory(messageReader)
+    val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
     val node = ClusterNode(
-            messageReader, messageBuilder, actionFactory, membershiplistFactory, logger
+            predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
     )
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
@@ -29,7 +30,6 @@ fun main(args: Array<String>) {
 
 class ClusterNode(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
-        private val messageReader: MessageReader,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
         private val membershipListFactory: MembershipListFactory,
@@ -86,27 +86,6 @@ class ClusterNode(
                 }
     }
 
-    private fun membershipListToBytes(): ByteArray {
-        val message = Actions.MembershipList.newBuilder()
-
-        membershipList.nodes.forEach {
-            val timestamp = Actions.Timestamp.newBuilder()
-                    .setSecondsSinceEpoch(it.joinedAt.epochSecond)
-                    .setNanoSeconds(it.joinedAt.nano)
-                    .build()
-
-            val member = Actions.Membership
-                    .newBuilder()
-                    .setHostName(it.addr.hostName)
-                    .setPort(it.addr.port)
-                    .setTimestamp(timestamp)
-                    .build()
-            message.addNode(member)
-        }
-
-        return message.build().toByteArray()
-    }
-
     fun start() {
         println("Join address: ${localAddr.hostName}")
 
@@ -128,9 +107,10 @@ class ClusterNode(
         }
 
         self = getSelfNode()
-        logger.debug(tag, "found self node: $self")
+        logger.debug(tag, "self node: $self")
 
         successorNodes = returnThreeSuccessors()
+        predecessorNodes = returnThreePredecessors()
 
         predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
@@ -413,8 +393,25 @@ class ClusterNode(
     }
 
     private fun sendMembershipList(channel: SocketChannel) {
-        val buffer = messageBuilder.build(membershipListToBytes())
-        sendMessage(channel, buffer)
+        val builder = Actions.MembershipList.newBuilder()
+
+        membershipList.nodes.forEach {
+            val timestamp = Actions.Timestamp.newBuilder()
+                    .setSecondsSinceEpoch(it.joinedAt.epochSecond)
+                    .setNanoSeconds(it.joinedAt.nano)
+                    .build()
+
+            val member = Actions.Membership
+                    .newBuilder()
+                    .setHostName(it.addr.hostName)
+                    .setPort(it.addr.port)
+                    .setTimestamp(timestamp)
+                    .build()
+            builder.addNode(member)
+        }
+
+        val message = builder.build()
+        sendMessage(channel, messageBuilder.build(message.toByteArray()))
     }
 
     private fun sendMessage(channel: WritableByteChannel, buffer: ByteBuffer) {
