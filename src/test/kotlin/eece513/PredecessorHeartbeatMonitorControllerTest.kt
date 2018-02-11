@@ -31,10 +31,8 @@ class PredecessorHeartbeatMonitorControllerTest {
                     val sink = pipe.sink()
                     val source = pipe.source()
 
-                    val controller = PredecessorHeartbeatMonitorController(
-                            socket, sink, MessageBuilder(), logger
-                    )
-                    controller.start(listOf(node))
+                    val controller = PredecessorHeartbeatMonitorController(MessageBuilder(), logger)
+                    controller.start(socket, sink, listOf(node))
 
                     val byteArray = MessageReader(logger).read(source)
                     val result = Message.Predecessor.parseFrom(byteArray)
@@ -59,10 +57,8 @@ class PredecessorHeartbeatMonitorControllerTest {
                     val sink = pipe.sink()
                     val source = pipe.source()
 
-                    val controller = PredecessorHeartbeatMonitorController(
-                            channel, sink, MessageBuilder(), logger
-                    )
-                    controller.start(listOf(node))
+                    val controller = PredecessorHeartbeatMonitorController(MessageBuilder(), logger)
+                    controller.start(channel, sink, listOf(node))
 
                     DatagramSocket(localAddr).use { socket ->
                         socket.send(DatagramPacket(ByteArray(0), 0, serverAddr))
@@ -92,10 +88,8 @@ class PredecessorHeartbeatMonitorControllerTest {
                     val sink = pipe.sink()
                     val source = pipe.source()
 
-                    val controller = PredecessorHeartbeatMonitorController(
-                            channel, sink, MessageBuilder(), logger
-                    )
-                    controller.start(listOf(node))
+                    val controller = PredecessorHeartbeatMonitorController(MessageBuilder(), logger)
+                    controller.start(channel, sink, listOf(node))
 
                     val iterator = (0..1).iterator()
                     do {
@@ -133,10 +127,8 @@ class PredecessorHeartbeatMonitorControllerTest {
                     val sink = pipe.sink()
                     val source = pipe.source()
 
-                    val controller = PredecessorHeartbeatMonitorController(
-                            channel, sink, MessageBuilder(), logger
-                    )
-                    controller.start(listOf(node, secondNode))
+                    val controller = PredecessorHeartbeatMonitorController(MessageBuilder(), logger)
+                    controller.start(channel, sink, listOf(node, secondNode))
 
                     DatagramSocket(localAddr).use { socket ->
                         socket.send(DatagramPacket(ByteArray(0), 0, serverAddr))
@@ -178,10 +170,8 @@ class PredecessorHeartbeatMonitorControllerTest {
                     val sink = pipe.sink()
                     val source = pipe.source()
 
-                    val controller = PredecessorHeartbeatMonitorController(
-                            channel, sink, MessageBuilder(), logger
-                    )
-                    controller.start(listOf(node, secondNode))
+                    val controller = PredecessorHeartbeatMonitorController(MessageBuilder(), logger)
+                    controller.start(channel, sink, listOf(node, secondNode))
 
                     val result = mutableSetOf<Message.Predecessor>()
                     result.add(Message.Predecessor.parseFrom(MessageReader(logger).read(source)))

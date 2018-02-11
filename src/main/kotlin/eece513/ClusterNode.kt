@@ -24,6 +24,7 @@ fun main(args: Array<String>) {
 }
 
 class ClusterNode(
+        private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageReader: MessageReader,
         private val messageBuilder: MessageBuilder,
         private val logger: Logger
