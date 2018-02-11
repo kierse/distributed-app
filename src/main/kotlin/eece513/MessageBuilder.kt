@@ -16,4 +16,13 @@ class MessageBuilder {
 
         return buffer
     }
+
+    fun combineMessages(buffers: List<ByteBuffer>): ByteBuffer {
+        val byteList = mutableListOf<Byte>()
+        buffers.forEach { buffer ->
+            byteList.addAll(buffer.array().asList())
+        }
+
+        return ByteBuffer.wrap(byteList.toByteArray())
+    }
 }
