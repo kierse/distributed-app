@@ -12,8 +12,15 @@ import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
-    val node = ClusterNode(logger)
+    val messageReader = MessageReader(logger)
+    val messageBuilder = MessageBuilder()
+    val actionFactory = ActionFactory(messageReader, logger)
+    val membershipListFactory = MembershipListFactory(messageReader)
+    val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
+    val node = ClusterNode(
+            predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
+    )
     if (args.isNotEmpty()) {
         node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
     }
@@ -21,7 +28,13 @@ fun main(args: Array<String>) {
     node.start()
 }
 
-class ClusterNode(private val logger: Logger) {
+class ClusterNode(
+        private val predecessorMonitor: PredecessorHeartbeatMonitorController,
+        private val messageBuilder: MessageBuilder,
+        private val actionFactory: ActionFactory,
+        private val membershipListFactory: MembershipListFactory,
+        private val logger: Logger
+) {
     private enum class ChannelType {
         JOIN_ACCEPT,
         PREDECESSOR_ACCEPT,
@@ -34,7 +47,8 @@ class ClusterNode(private val logger: Logger) {
     private val tag = ClusterNode::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
-    private val localAddr = InetAddress.getLocalHost()
+//    private val localAddr = InetAddress.getLocalHost()
+    private val localAddr = InetAddress.getByName("127.0.0.1")
     private var localPort: Int = -1
 
     private var membershipList = MembershipList(emptyList())
@@ -66,40 +80,10 @@ class ClusterNode(private val logger: Logger) {
 
                     localPort = channel.socket().localPort
 
-                    val bytes = readMessage(channel)
-                    if (bytes.remaining() == 0) throw Throwable("no response from join server!")
-
-                    membershipList = bytesToMembershipList(bytes)
+                    membershipList = membershipListFactory.build(channel) ?:
+                            throw Throwable("no response from join server!")
                     logger.debug(tag, "membership list: $membershipList")
                 }
-    }
-
-    private fun bytesToMembershipList(buffer: ByteBuffer): MembershipList {
-        val parsed = Actions.MembershipList.parseFrom(buffer)
-
-        val nodes = mutableListOf<Node>()
-        for (membership in parsed.nodeList) {
-            val addr = InetSocketAddress(membership.hostName, membership.port)
-            nodes.add(Node(addr, Instant.ofEpochMilli(membership.timestamp)))
-        }
-
-        return MembershipList(nodes)
-    }
-
-    private fun membershipListToBytes(): ByteArray {
-        val message = Actions.MembershipList.newBuilder()
-
-        membershipList.nodes.forEach {
-            val member = Actions.Membership
-                    .newBuilder()
-                    .setHostName((it.addr as InetSocketAddress).hostName)
-                    .setPort(it.addr.port)
-                    .setTimestamp(it.joinedAt.toEpochMilli())
-                    .build()
-            message.addNode(member)
-        }
-
-        return message.build().toByteArray()
     }
 
     fun start() {
@@ -123,12 +107,10 @@ class ClusterNode(private val logger: Logger) {
         }
 
         self = getSelfNode()
-        logger.debug(tag, "found self node: $self")
+        logger.debug(tag, "self node: $self")
 
         successorNodes = returnThreeSuccessors()
         predecessorNodes = returnThreePredecessors()
-
-        startSendingHeartbeats()
 
         predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
@@ -136,10 +118,15 @@ class ClusterNode(private val logger: Logger) {
         predecessorServerChannel = ServerSocketChannel.open().bind(socketAddr)
         predecessorServerChannel.configureBlocking(false)
 
+        val pipe = Pipe.open()
+        val sinkChannel = pipe.sink()
+
+        val sourceChannel = pipe.source()
+        sourceChannel.configureBlocking(false)
+
         val selector = Selector.open()
 
-        predecessorHeartbeatChannel
-                .register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
+        sourceChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
 
         predecessorServerChannel
                 .register(selector, SelectionKey.OP_ACCEPT, ChannelType.PREDECESSOR_ACCEPT)
@@ -147,6 +134,9 @@ class ClusterNode(private val logger: Logger) {
         // Note: only the first node in a cluster (aka the join server) will listen for join requests
         joinRequestServerChannel
                 ?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
+
+        startSendingHeartbeats()
+        startMonitoringHeartbeats(predecessorHeartbeatChannel, sinkChannel)
 
         /**
          * [Selector] returns channels that are ready for I/O operations. It blocks until at least one (but possibly
@@ -174,11 +164,11 @@ class ClusterNode(private val logger: Logger) {
                         predecessorChannels.add(key.channel() as SocketChannel)
 
                     key.isReadable && type == ChannelType.PREDECESSOR_HEARTBEAT_READ ->
-                        processPredecessorHeartbeat(key.channel() as DatagramChannel)
+                        processMissedPredecessorHeartbeat(key.channel() as Pipe.SourceChannel)
 
                     key.isReadable && type == ChannelType.SUCCESSOR_ACTION_READ -> {
                         val channel = key.channel() as SocketChannel
-                        val actions = readActions(channel)
+                        val actions = actionFactory.build(channel)
 
                         pendingPredecessorActions.getValue(channel.remoteAddress).addAll(actions)
                         localActions.addAll(actions)
@@ -327,13 +317,18 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
-    // what to do when you get heartbeat
-    private fun processPredecessorHeartbeat(channel: DatagramChannel) {
-        val remoteAddr = channel.receive(ByteBuffer.allocate(0))
-        logger.info(tag, "received packet from $remoteAddr")
+    private fun startMonitoringHeartbeats(heartbeatChannel: DatagramChannel, errorChannel: Pipe.SinkChannel) {
+
     }
 
-    private fun buildJoinAction(addr: SocketAddress): Action.Join = Action.Join(Node(addr, Instant.now()))
+    // what to do when you get heartbeat
+    private fun processMissedPredecessorHeartbeat(channel: Pipe.SourceChannel) {
+        // TODO
+    }
+
+    private fun buildJoinAction(addr: SocketAddress): Action.Join {
+        return Action.Join(Node(addr as InetSocketAddress, Instant.now()))
+    }
 
     private fun returnThreePredecessors(): List<Node> {
         val nodes = membershipList.nodes
@@ -371,32 +366,6 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
-    private fun readActions(channel: ReadableByteChannel): List<Action> {
-        val actions = mutableListOf<Action>()
-
-        do {
-            val bytes = readMessage(channel)
-            if (bytes.remaining() == 0) break
-
-            val parsed = Actions.Request.parseFrom(bytes)
-
-            val addr = InetSocketAddress(parsed.hostName, parsed.port)
-            val node = Node(addr, Instant.ofEpochMilli(parsed.timestamp))
-
-            val action: Action = when (parsed.type) {
-                Actions.Request.Type.JOIN -> Action.Join(node)
-                Actions.Request.Type.REMOVE -> Action.Leave(node)
-                Actions.Request.Type.DROP -> Action.Drop(node)
-
-                else -> throw IllegalArgumentException("unrecognized type! ${parsed.type.name}")
-            }
-
-            actions.add(action)
-        } while (true)
-
-        return actions
-    }
-
     private fun sendActions(channel: SocketChannel, actions: List<Action>) {
         for (action in actions) {
             val type = when (action.type) {
@@ -405,60 +374,52 @@ class ClusterNode(private val logger: Logger) {
                 Action.Type.DROP -> Actions.Request.Type.DROP
             }
 
-            val addr = action.node.addr as InetSocketAddress
+            val now = Instant.now()
+            val timestamp = Actions.Timestamp.newBuilder()
+                    .setSecondsSinceEpoch(now.epochSecond)
+                    .setNanoSeconds(now.nano)
+                    .build()
+
+            val addr = action.node.addr
             val request = Actions.Request.newBuilder()
                     .setType(type)
-                    .setTimestamp(Instant.now().toEpochMilli())
+                    .setTimestamp(timestamp)
                     .setHostName(addr.hostString)
                     .setPort(addr.port)
                     .build()
 
-            sendMessage(channel, request.toByteArray())
+            sendMessage(channel, messageBuilder.build(request.toByteArray()))
         }
     }
 
-    private fun sendMembershipList(channel: SocketChannel) = sendMessage(channel, membershipListToBytes())
+    private fun sendMembershipList(channel: SocketChannel) {
+        val builder = Actions.MembershipList.newBuilder()
 
-    private fun sendMessage(channel: WritableByteChannel, bytes: ByteArray) {
-        val count = bytes.size.toShort()
+        membershipList.nodes.forEach {
+            val timestamp = Actions.Timestamp.newBuilder()
+                    .setSecondsSinceEpoch(it.joinedAt.epochSecond)
+                    .setNanoSeconds(it.joinedAt.nano)
+                    .build()
 
-        // Create message buffer
-        // Note: add 2 extra bytes for message header
-        val buffer = ByteBuffer.allocate(count + 2)
-        buffer.clear()
-        buffer.putShort(count)
-        buffer.put(bytes)
-        buffer.flip()
+            val member = Actions.Membership
+                    .newBuilder()
+                    .setHostName(it.addr.hostName)
+                    .setPort(it.addr.port)
+                    .setTimestamp(timestamp)
+                    .build()
+            builder.addNode(member)
+        }
+
+        val message = builder.build()
+        sendMessage(channel, messageBuilder.build(message.toByteArray()))
+    }
+
+    private fun sendMessage(channel: WritableByteChannel, buffer: ByteBuffer) {
+        if (buffer.position() > 0) buffer.flip()
 
         while (buffer.hasRemaining()) {
             channel.write(buffer)
         }
-        logger.debug(tag, "sendMessage: wrote $count byte(s) to channel")
-    }
-
-    private fun readMessage(channel: ReadableByteChannel): ByteBuffer {
-        val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
-        msgLengthBuffer.clear()
-
-        while (msgLengthBuffer.hasRemaining()) {
-            channel.read(msgLengthBuffer)
-        }
-
-        if (msgLengthBuffer.position() == 0) return ByteBuffer.allocate(0)
-
-        logger.debug(tag, "readMessage: read ${msgLengthBuffer.position()} header byte(s)")
-
-        msgLengthBuffer.flip()
-        val header = msgLengthBuffer.short.toInt()
-
-        logger.debug(tag, "readMessage: message body is $header byte(s)")
-
-        val msgBuffer = ByteBuffer.allocate(header)
-        while (msgBuffer.hasRemaining()) {
-            channel.read(msgBuffer)
-        }
-
-        logger.debug(tag, "readMessage: read ${msgBuffer.position()} message body byte(s)")
-        return msgBuffer.flip()
+        logger.debug(tag, "sendMessage: wrote ${buffer.position()} byte(s) to channel")
     }
 }
