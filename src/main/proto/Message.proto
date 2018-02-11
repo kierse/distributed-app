@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package eece513;
+
+option java_package = "eece513";
+
+message Predecessor {
+    string hostName = 2;
+    int32 port = 3;
+}

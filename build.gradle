@@ -26,7 +26,7 @@ repositories {
 sourceSets {
     main{
         proto{
-                srcDir 'src/main/proto'
+            srcDirs += 'src/main/proto'
          }
     }
     test {
@@ -40,8 +40,9 @@ sourceSets {
 dependencies {
     // kotlin
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
-    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.1'
-    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.22.1'
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.2'
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.22.2'
+    testCompile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
 
     // protobuf
     compile "com.google.protobuf:protobuf-gradle-plugin:0.8.4"

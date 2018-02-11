@@ -27,3 +27,4 @@ message Membership {
     string hostName = 2;
     int32 port = 3;
 }
+

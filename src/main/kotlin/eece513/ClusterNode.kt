@@ -8,6 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.*
 import java.time.Instant
 import java.util.*
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
@@ -40,6 +41,7 @@ class ClusterNode(private val logger: Logger) {
     private var membershipList = MembershipList(emptyList())
     private lateinit var successorNodes: List<Node>
     private lateinit var predecessorNodes: List<Node>
+    private val predecessorNodesRef = AtomicReference<List<Node>>(emptyList())
 
     private var predecessorActionChannels = mutableListOf<SelectionKey>()
     private lateinit var predecessorHeartbeatChannel: DatagramChannel
@@ -126,9 +128,7 @@ class ClusterNode(private val logger: Logger) {
         logger.debug(tag, "found self node: $self")
 
         successorNodes = returnThreeSuccessors()
-        predecessorNodes = returnThreePredecessors()
-
-        startSendingHeartbeats()
+        predecessorNodesRef.set(returnThreePredecessors())
 
         predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
         predecessorHeartbeatChannel.configureBlocking(false)
@@ -136,10 +136,15 @@ class ClusterNode(private val logger: Logger) {
         predecessorServerChannel = ServerSocketChannel.open().bind(socketAddr)
         predecessorServerChannel.configureBlocking(false)
 
+        val pipe = Pipe.open()
+        val sinkChannel = pipe.sink()
+
+        val sourceChannel = pipe.source()
+        sourceChannel.configureBlocking(false)
+
         val selector = Selector.open()
 
-        predecessorHeartbeatChannel
-                .register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
+        sourceChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
 
         predecessorServerChannel
                 .register(selector, SelectionKey.OP_ACCEPT, ChannelType.PREDECESSOR_ACCEPT)
@@ -147,6 +152,9 @@ class ClusterNode(private val logger: Logger) {
         // Note: only the first node in a cluster (aka the join server) will listen for join requests
         joinRequestServerChannel
                 ?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
+
+        startSendingHeartbeats()
+        startMonitoringHeartbeats(predecessorHeartbeatChannel, sinkChannel)
 
         /**
          * [Selector] returns channels that are ready for I/O operations. It blocks until at least one (but possibly
@@ -174,7 +182,7 @@ class ClusterNode(private val logger: Logger) {
                         predecessorChannels.add(key.channel() as SocketChannel)
 
                     key.isReadable && type == ChannelType.PREDECESSOR_HEARTBEAT_READ ->
-                        processPredecessorHeartbeat(key.channel() as DatagramChannel)
+                        processMissedPredecessorHeartbeat(key.channel() as Pipe.SourceChannel)
 
                     key.isReadable && type == ChannelType.SUCCESSOR_ACTION_READ -> {
                         val channel = key.channel() as SocketChannel
@@ -327,10 +335,13 @@ class ClusterNode(private val logger: Logger) {
         }
     }
 
+    private fun startMonitoringHeartbeats(heartbeatChannel: DatagramChannel, errorChannel: Pipe.SinkChannel) {
+
+    }
+
     // what to do when you get heartbeat
-    private fun processPredecessorHeartbeat(channel: DatagramChannel) {
-        val remoteAddr = channel.receive(ByteBuffer.allocate(0))
-        logger.info(tag, "received packet from $remoteAddr")
+    private fun processMissedPredecessorHeartbeat(channel: Pipe.SourceChannel) {
+        // TODO
     }
 
     private fun buildJoinAction(addr: SocketAddress): Action.Join = Action.Join(Node(addr, Instant.now()))
@@ -437,7 +448,7 @@ class ClusterNode(private val logger: Logger) {
     }
 
     private fun readMessage(channel: ReadableByteChannel): ByteBuffer {
-        val msgLengthBuffer = ByteBuffer.allocate(COMMAND_LENGTH_BUFFER_SIZE)
+        val msgLengthBuffer = ByteBuffer.allocate(MESSAGE_HEADER_SIZE)
         msgLengthBuffer.clear()
 
         while (msgLengthBuffer.hasRemaining()) {
