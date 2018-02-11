@@ -14,8 +14,6 @@ import java.nio.channels.WritableByteChannel
 import kotlin.concurrent.thread
 
 class PredecessorHeartbeatMonitorController(
-        private val datagramChannel: DatagramChannel,
-        private val writableByteChannel: WritableByteChannel,
         private val messageBuilder: MessageBuilder,
         private val logger: Logger
 ) {
@@ -115,7 +113,11 @@ class PredecessorHeartbeatMonitorController(
 
     private var monitorThread: Thread? = null
 
-    fun start(nodes: List<Node>) {
+    fun start(
+            datagramChannel: DatagramChannel,
+            writableByteChannel: WritableByteChannel,
+            nodes: List<Node>
+    ) {
         val runningThread = monitorThread
         if (runningThread != null) {
             runningThread.interrupt()

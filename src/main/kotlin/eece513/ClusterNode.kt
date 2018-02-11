@@ -429,26 +429,21 @@ class ClusterNode(
                     .setPort(addr.port)
                     .build()
 
-            sendMessage(channel, request.toByteArray())
+            sendMessage(channel, messageBuilder.build(request.toByteArray()))
         }
     }
 
-    private fun sendMembershipList(channel: SocketChannel) = sendMessage(channel, membershipListToBytes())
+    private fun sendMembershipList(channel: SocketChannel) {
+        val buffer = messageBuilder.build(membershipListToBytes())
+        sendMessage(channel, buffer)
+    }
 
-    private fun sendMessage(channel: WritableByteChannel, bytes: ByteArray) {
-        val count = bytes.size.toShort()
-
-        // Create message buffer
-        // Note: add 2 extra bytes for message header
-        val buffer = ByteBuffer.allocate(count + 2)
-        buffer.clear()
-        buffer.putShort(count)
-        buffer.put(bytes)
-        buffer.flip()
+    private fun sendMessage(channel: WritableByteChannel, buffer: ByteBuffer) {
+        if (buffer.position() > 0) buffer.flip()
 
         while (buffer.hasRemaining()) {
             channel.write(buffer)
         }
-        logger.debug(tag, "sendMessage: wrote $count byte(s) to channel")
+        logger.debug(tag, "sendMessage: wrote ${buffer.position()} byte(s) to channel")
     }
 }
