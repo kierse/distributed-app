@@ -13,9 +13,14 @@ message Request {
     }
 
     Type type = 1;
-    int64 timestamp = 2;
+    Timestamp timestamp = 2;
     string hostName = 3;
     int32 port = 4;
+}
+
+message Timestamp {
+    int64 secondsSinceEpoch = 1;
+    int32 nanoSeconds = 2;
 }
 
 message MembershipList {

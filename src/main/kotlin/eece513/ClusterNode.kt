@@ -424,10 +424,16 @@ class ClusterNode(
                 Action.Type.DROP -> Actions.Request.Type.DROP
             }
 
+            val now = Instant.now()
+            val timestamp = Actions.Timestamp.newBuilder()
+                    .setSecondsSinceEpoch(now.epochSecond)
+                    .setNanoSeconds(now.nano)
+                    .build()
+
             val addr = action.node.addr
             val request = Actions.Request.newBuilder()
                     .setType(type)
-                    .setTimestamp(Instant.now().toEpochMilli())
+                    .setTimestamp(timestamp)
                     .setHostName(addr.hostString)
                     .setPort(addr.port)
                     .build()
