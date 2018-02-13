@@ -9,7 +9,9 @@ message Request {
     enum Type{
         JOIN = 0;
         REMOVE = 1;
-        DROP= 2;
+        DROP = 2;
+        CONNECT = 3;
+        HEARTBEAT = 4;
     }
 
     Type type = 1;
