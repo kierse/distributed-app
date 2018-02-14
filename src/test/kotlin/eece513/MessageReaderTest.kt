@@ -34,7 +34,7 @@ class MessageReaderTest {
     }
 
     @Test
-    fun read_two_messages() {
+    fun read__two_messages() {
         val body1 = 12345
         val body2 = 54321
         val intByteCount = 4 /* num of bytes to hold an int */

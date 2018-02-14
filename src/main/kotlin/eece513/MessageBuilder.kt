@@ -17,15 +17,6 @@ class MessageBuilder {
         return buffer
     }
 
-    fun buildDatagram(bytes: ByteArray): ByteBuffer {
-        val buffer = ByteBuffer.allocate(bytes.size)
-        buffer.clear()
-        buffer.put(bytes)
-        buffer.flip()
-
-        return buffer
-    }
-
     fun combineMessages(buffers: List<ByteBuffer>): ByteBuffer {
         val byteList = mutableListOf<Byte>()
         buffers.forEach { buffer ->

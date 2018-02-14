@@ -15,7 +15,7 @@ class MessageBuilderTest {
     }
 
     @Test
-    fun combineMessages__with_single_message() {
+    fun combineMessages() {
         val body1 = 1234
         val body2 = 1234
 

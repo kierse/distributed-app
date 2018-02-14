@@ -26,7 +26,7 @@ class ActionFactoryTest {
         val stream = ByteArrayInputStream(message.array())
         val channel = Channels.newChannel(stream)
 
-        val result = ActionFactory(messageReader, logger)
+        val result = ActionFactory(messageReader)
                 .buildList(channel)
 
         assertEquals(expected, result)
@@ -46,7 +46,7 @@ class ActionFactoryTest {
         val stream = ByteArrayInputStream(message.array())
         val channel = Channels.newChannel(stream)
 
-        val result = ActionFactory(messageReader, logger)
+        val result = ActionFactory(messageReader)
                 .buildList(channel)
 
         assertEquals(expected, result)
@@ -62,8 +62,8 @@ class ActionFactoryTest {
         val stream = ByteArrayInputStream(message.array())
         val channel = Channels.newChannel(stream)
 
-        val result = ActionFactory(messageReader, logger)
-                .buildList(channel)
+        val result = ActionFactory(messageReader)
+                .build(channel)
 
         assertEquals(expected, result)
     }
@@ -84,6 +84,7 @@ class ActionFactoryTest {
             Action.Type.LEAVE -> Actions.Request.Type.REMOVE
             Action.Type.DROP -> Actions.Request.Type.DROP
             Action.Type.CONNECT -> Actions.Request.Type.CONNECT
+            Action.Type.HEARTBEAT -> Actions.Request.Type.HEARTBEAT
         }
 
         return builder
