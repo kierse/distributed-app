@@ -5,7 +5,7 @@ function displayHelp {
         echo $1
     fi
 
-    echo "usage: ./deploymentScript <path to ppk file> <action>"
+    echo "usage: ./deploymentScript <path to pem file> <action>"
     echo
     echo " Actions:"
     echo "          []                   (transfer jar file)"
@@ -23,8 +23,8 @@ fi
 
 for i in "$@"; do
     case $i in
-        *.ppk|*.PPK)
-            ppk=$i
+        *.pem|*.PEM)
+            pem=$i
             ;;
         --jar)
             jar=true
@@ -47,12 +47,12 @@ for i in "$@"; do
     esac
 done
 
-if [ -z "$ppk" ]; then
-    displayHelp "error: must specify a ppk file!"
+if [ -z "$pem" ]; then
+    displayHelp "error: must specify a pem file!"
 fi
 
-if [ ! -f "$ppk" ]; then
-    displayHelp "error: $ppk does not exist!"
+if [ ! -f "$pem" ]; then
+    displayHelp "error: $pem does not exist!"
 fi
 
 if [ -z "$instruction" ] && [ -z "$all" ]; then
@@ -70,12 +70,13 @@ do
 	echo ---
     echo "instance: $url"
 
+	echo "attempting to kill running node..."
+ 	ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-app-1.0.jar' < /dev/null
+
     # jar files
     if [ ! -z "$jar" ] || [ ! -z "$all" ]; then
         echo "copying jar..."
-        scp -i "$ppk" build/libs/distributed-grep-1.0.jar ec2-user@"$url":/home/ec2-user < /dev/null
-
-        putty.exe -ssh -i "$ppk" ec2-user@"$url" &
+        scp -i "$pem" build/libs/distributed-app-1.0.jar ec2-user@"$url":/home/ec2-user < /dev/null
     fi
 
 	echo

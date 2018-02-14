@@ -83,11 +83,23 @@ jar {
     }
 }
 
-
-
 compileKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
 compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
+}
+
+task configBootstrapAws {
+    doLast {
+        if (!project.hasProperty("pem")) {
+            throw new InvalidUserDataException("must provide path to PEM file!")
+        }
+
+        bootstrapAws.commandLine "./scripts/deploymentScript", project.pem, "--all"
+    }
+}
+
+task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
+    dependsOn = ['configBootstrapAws']
 }
