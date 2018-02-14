@@ -73,3 +73,5 @@ build/
 
 logs/
 servers.txt
+
+src/main/java
