@@ -1,0 +1,84 @@
+#/bin/sh
+
+function displayHelp {
+    if [ ! -z "$1" ]; then
+        echo $1
+    fi
+
+    echo "usage: ./deploymentScript <path to ppk file> <action>"
+    echo
+    echo " Actions:"
+    echo "          []                   (transfer jar file)"
+    echo "          [--jar]              (transfer jar file)"
+    echo "          [--all]              (all of the above)"
+    echo "          [--help]             (print this message)"
+    echo
+    exit 1
+}
+
+if [ "$#" -eq 0 ]; then
+    all=true
+    instruction=true
+fi
+
+for i in "$@"; do
+    case $i in
+        *.ppk|*.PPK)
+            ppk=$i
+            ;;
+        --jar)
+            jar=true
+            instruction=true
+            ;;
+
+        --all)
+            all=true
+            instruction=true
+            ;;
+
+        --help)
+            displayHelp
+            ;;
+
+        *)
+            displayHelp "unknown argument: $i"
+            ;;
+
+    esac
+done
+
+if [ -z "$ppk" ]; then
+    displayHelp "error: must specify a ppk file!"
+fi
+
+if [ ! -f "$ppk" ]; then
+    displayHelp "error: $ppk does not exist!"
+fi
+
+if [ -z "$instruction" ] && [ -z "$all" ]; then
+    displayHelp "error: must indicate actions to be performed!"
+fi
+
+file="servers.txt"
+
+if [ ! -f "$file" ]; then
+    displayHelp "error: $PWD/$file missing! Must be populated with EC2 instance urls/IPs"
+fi
+
+while IFS= read url
+do
+	echo ---
+    echo "instance: $url"
+
+    # jar files
+    if [ ! -z "$jar" ] || [ ! -z "$all" ]; then
+        echo "copying jar..."
+        scp -i "$ppk" build/libs/distributed-grep-1.0.jar ec2-user@"$url":/home/ec2-user < /dev/null
+
+        putty.exe -ssh -i "$ppk" ec2-user@"$url" &
+    fi
+
+	echo
+done < "$file"
+
+echo "deployment complete!"

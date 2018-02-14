@@ -32,7 +32,8 @@ class MessageReader(private val logger: Logger) {
         }
 
         logger.debug(tag, "read ${msgBuffer.position()} message body byte(s)")
-        return msgBuffer.flip().array()
+        msgBuffer.flip()
+        return msgBuffer.array()
     }
 
     fun read(datagramChannel: DatagramChannel): ByteArray {
