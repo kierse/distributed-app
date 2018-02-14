@@ -101,5 +101,5 @@ task configBootstrapAws {
 }
 
 task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
-    dependsOn = ['configBootstrapAws']
+    dependsOn = ['jar', 'configBootstrapAws']
 }
