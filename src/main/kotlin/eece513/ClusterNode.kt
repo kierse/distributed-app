@@ -207,13 +207,18 @@ class ClusterNode(
                         key.isReadable -> when (type) {
                             ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ -> {
                                 val channel = key.channel() as ReadableByteChannel
-                                val dropAction = actionFactory.build(channel)
-                                        ?: throw IllegalArgumentException("unable to build DROP action")
+                                val dropActions = actionFactory.buildList(channel)
 
-                                logger.info(tag, "received drop command for ${dropAction.node.addr}")
-                                processAction(dropAction)
+                                if (dropActions.isNotEmpty()) {
+                                    logger.debug(tag, "found ${dropActions.size} drop actions")
 
-                                pendingSuccessorActions.values.forEach { it.add(dropAction) }
+                                    dropActions.forEach { dropAction ->
+                                        logger.info(tag, "dropping ${dropAction.node.addr}")
+                                        processAction(dropAction)
+                                    }
+
+                                    pendingSuccessorActions.values.forEach { it.addAll(dropActions) }
+                                }
                             }
 
                             ChannelType.JOIN_ACCEPT_READ -> {
