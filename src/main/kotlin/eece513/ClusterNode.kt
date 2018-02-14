@@ -3,6 +3,9 @@ package eece513
 import eece513.model.Action
 import eece513.model.MembershipList
 import eece513.model.Node
+import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.channels.ReceiveChannel
+import kotlinx.coroutines.experimental.runBlocking
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -14,21 +17,23 @@ fun main(args: Array<String>) {
     val logger = TinyLogWrapper()
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
-    val actionFactory = ActionFactory(messageReader, logger)
+    val actionFactory = ActionFactory(messageReader)
     val membershipListFactory = MembershipListFactory(messageReader)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
-    val node = ClusterNode(
+    val node = ClusterNode2(
             predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
     )
-    if (args.isNotEmpty()) {
-        node.join(InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT))
+    val address = if (args.isNotEmpty()) {
+        InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
+    } else {
+        null
     }
 
-    node.start()
+    node.start(address)
 }
 
-class ClusterNode(
+class ClusterNode2(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
@@ -37,260 +42,291 @@ class ClusterNode(
 ) {
     private enum class ChannelType {
         JOIN_ACCEPT,
+        JOIN_ACCEPT_READ,
+        JOIN_ACCEPT_WRITE,
+        JOIN_CONNECT,
+        JOIN_CONNECT_WRITE,
+        JOIN_CONNECT_READ,
         PREDECESSOR_ACCEPT,
+        PREDECESSOR_ACTION_READ,
         PREDECESSOR_ACTION_WRITE,
+        PREDECESSOR_CONNECT_WRITE,
+        PREDECESSOR_CONNECT,
         PREDECESSOR_HEARTBEAT_READ,
+        PREDECESSOR_MISSED_HEARTBEAT_READ,
+        SUCCESSOR_ACCEPT,
+        SUCCESSOR_ACCEPT_READ,
+        SUCCESSOR_ACTION,
         SUCCESSOR_ACTION_READ,
+        SUCCESSOR_ACTION_WRITE,
         SUCCESSOR_HEARTBEAT_WRITE
     }
 
-    private val tag = ClusterNode::class.java.simpleName
+    private val tag = ClusterNode2::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
-//    private val localAddr = InetAddress.getLocalHost()
+    //    private val localAddr = InetAddress.getLocalHost()
     private val localAddr = InetAddress.getByName("127.0.0.1")
-    private var localPort: Int = -1
 
     private var membershipList = MembershipList(emptyList())
-    private lateinit var successorNodes: List<Node>
-    private lateinit var predecessorNodes: List<Node>
 
-    private var predecessorActionChannels = mutableListOf<SelectionKey>()
-    private lateinit var predecessorHeartbeatChannel: DatagramChannel
-    private lateinit var predecessorServerChannel: ServerSocketChannel
-
-    private var joinRequestServerChannel: ServerSocketChannel? = null
-
-    private lateinit var self: Node
-
-    private val timer = Timer("successors heartbeat timer", true)
+    private val timer = Timer("HEARTBEAT-TIMER", true)
     private var heartbeatTimerTask: TimerTask? = null
 
-    // what to do when it wants to join
-    fun join(addr: SocketAddress) {
-        // is this in blocking mode? I think it is
-        // which is ok as we are connecting to the cluster
-        SocketChannel
-                .open()
-                .use { channel ->
-                    // opens channel
-                    val connected = channel.connect(addr)
+    private val successorChannels = mutableMapOf<SelectionKey, Node>()
+    private val predecessorChannels = mutableMapOf<SelectionKey, Node>()
 
-                    if (!connected) throw Throwable("wasn't able to connect!")
-
-                    localPort = channel.socket().localPort
-
-                    membershipList = membershipListFactory.build(channel) ?:
-                            throw Throwable("no response from join server!")
-                    logger.debug(tag, "membership list: $membershipList")
+    private val self: Node by lazy {
+        membershipList
+                .nodes
+                .first { it.addr == socketAddr }
+                .also {
+                    logger.debug(tag, "self node: $it")
                 }
     }
 
-    fun start() {
-        println("Join address: ${localAddr.hostName}")
+    private val heartbeatByteArray: ByteArray by lazy {
+        buildHeartbeat(self)
+                .toByteArray()
+                .also {
+                    logger.debug(tag, "heartbeat is ${it.size} byte(s) long")
+                }
+    }
 
-        if (membershipList.nodes.isEmpty()) {
-            // This is the join node. Default to using PORT
-            localPort = PORT
+    fun start(address: SocketAddress?) = runBlocking {
+        socketAddr = ServerSocket(0).use { InetSocketAddress(localAddr, it.localPort) }
 
-            socketAddr = InetSocketAddress(localAddr, localPort)
-            logger.info(tag, "binding to $socketAddr")
-
+        if (address == null) {
+            println("Join address: ${localAddr.hostName}")
             membershipList = MembershipList(listOf(Node(socketAddr, Instant.now())))
-
-            joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
-            joinRequestServerChannel?.configureBlocking(false)
-            logger.info(tag, "listening for joins on ${joinRequestServerChannel?.socket()?.localSocketAddress}")
-        } else {
-            socketAddr = InetSocketAddress(localAddr, localPort)
-            logger.info(tag, "binding to $socketAddr")
         }
 
-        self = getSelfNode()
-        logger.debug(tag, "self node: $self")
+        Selector.open().use { selector ->
+            logger.info(tag, "listening for TCP connections on $socketAddr")
+            val successorServerChannel = ServerSocketChannel.open().bind(socketAddr)
+            successorServerChannel.configureBlocking(false)
+            successorServerChannel.register(selector, SelectionKey.OP_ACCEPT, ChannelType.SUCCESSOR_ACCEPT)
 
-        successorNodes = returnThreeSuccessors()
-        predecessorNodes = returnThreePredecessors()
+            logger.info(tag, "listening for UDP connections on $socketAddr")
+            val predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
+            predecessorHeartbeatChannel.configureBlocking(false)
+            predecessorHeartbeatChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
 
-        predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
-        predecessorHeartbeatChannel.configureBlocking(false)
+            val pipe = Pipe.open()
+            val heartbeatCoroutineChannel = Channel<PredecessorHeartbeatMonitorController.Heartbeat>(3)
 
-        predecessorServerChannel = ServerSocketChannel.open().bind(socketAddr)
-        predecessorServerChannel.configureBlocking(false)
+            val predecessorMissedHeartbeatChannel = pipe.source()
+            predecessorMissedHeartbeatChannel.configureBlocking(false)
+            predecessorMissedHeartbeatChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ)
 
-        val pipe = Pipe.open()
-        val sinkChannel = pipe.sink()
-
-        val sourceChannel = pipe.source()
-        sourceChannel.configureBlocking(false)
-
-        val selector = Selector.open()
-
-        sourceChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_HEARTBEAT_READ)
-
-        predecessorServerChannel
-                .register(selector, SelectionKey.OP_ACCEPT, ChannelType.PREDECESSOR_ACCEPT)
-
-        // Note: only the first node in a cluster (aka the join server) will listen for join requests
-        joinRequestServerChannel
-                ?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
-
-        startSendingHeartbeats()
-        startMonitoringHeartbeats(predecessorHeartbeatChannel, sinkChannel)
-
-        /**
-         * [Selector] returns channels that are ready for I/O operations. It blocks until at least one (but possibly
-         * many) are ready. At any given time, it may return a subset of predecessor action channels. To sidestep the
-         * possibility of pushing actions inconsistently to predecessors, they are placed here as they arrive and
-         * processed whenever the related channels are ready for I/O operations.
-         */
-        val pendingPredecessorActions = mutableMapOf<SocketAddress, MutableList<Action>>()
-                .withDefault { mutableListOf() }
-
-        while (true) {
-            // block until we have at least one channel ready to use
-            selector.select()
-
-            val localActions = mutableListOf<Action>()
-            val joinChannels = mutableListOf<SocketChannel>()
-            val predecessorChannels = mutableListOf<SocketChannel>()
-
-            val selectionKeySet = selector.selectedKeys()
-            for (key in selectionKeySet) {
-                val type = key.attachment() as ChannelType
-
-                when {
-                    key.isWritable && type == ChannelType.PREDECESSOR_ACTION_WRITE ->
-                        predecessorChannels.add(key.channel() as SocketChannel)
-
-                    key.isReadable && type == ChannelType.PREDECESSOR_HEARTBEAT_READ ->
-                        processMissedPredecessorHeartbeat(key.channel() as Pipe.SourceChannel)
-
-                    key.isReadable && type == ChannelType.SUCCESSOR_ACTION_READ -> {
-                        val channel = key.channel() as SocketChannel
-                        val actions = actionFactory.build(channel)
-
-                        pendingPredecessorActions.getValue(channel.remoteAddress).addAll(actions)
-                        localActions.addAll(actions)
-                    }
-
-                    key.isAcceptable && type == ChannelType.PREDECESSOR_ACCEPT -> {
-                        val serverChannel = key.channel() as ServerSocketChannel
-                        val channel = serverChannel.accept()
-                        predecessorActionChannels.add(
-                                channel.register(selector, SelectionKey.OP_WRITE, ChannelType.PREDECESSOR_ACTION_WRITE)
-                        )
-                    }
-
-                    key.isAcceptable && type == ChannelType.JOIN_ACCEPT -> {
-                        val serverChannel = key.channel() as ServerSocketChannel
-                        val channel = serverChannel.accept()
-                        val action = buildJoinAction(channel.remoteAddress)
-
-                        logger.info(tag, "received join request from ${channel.remoteAddress}")
-
-                        pendingPredecessorActions.getValue(channel.remoteAddress).add(action)
-                        localActions.add(action)
-
-                        joinChannels.add(channel)
-                    }
-
-
-                    else -> throw Throwable("unknown channel and operation!")
-                }
-
-                selectionKeySet.remove(key)
+            if (address == null) {
+                val joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
+                joinRequestServerChannel?.configureBlocking(false)
+                joinRequestServerChannel?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
+                logger.info(tag, "listening for joins on ${joinRequestServerChannel.socket().localSocketAddress}")
+            } else {
+                val joinClusterChannel = SocketChannel.open()
+                joinClusterChannel.configureBlocking(false)
+                joinClusterChannel.register(selector, SelectionKey.OP_CONNECT, ChannelType.JOIN_CONNECT)
+                joinClusterChannel.connect(address)
+                logger.debug(tag, "connecting to join server!")
             }
 
-            // update local membership list
-            processActions(localActions)
+            val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+                    .withDefault { mutableListOf() }
 
-            // process joins and send membership list
-            for (channel in joinChannels) {
-                channel.use {
-                    sendMembershipList(channel)
-                }
-            }
+            while (selector.select() >= 0) {
+                val keyIterator = selector.selectedKeys().iterator()
+                while (keyIterator.hasNext()) {
+                    val key = keyIterator.next()
+                    keyIterator.remove()
 
-            // send pending actions to collected predecessors
-            for (channel in predecessorChannels) {
-                pendingPredecessorActions.remove(channel.remoteAddress)
-                        ?.let { list ->
-                            sendActions(channel, list)
+                    // While processing a previous key, it is possible the channel associated with this key was closed
+                    // Verify that the key is still valid before attempting to use it
+                    if (!key.isValid) continue
+
+                    val type = key.attachment() as ChannelType
+                    val currentMembershipList = membershipList
+
+                    when {
+                        key.isConnectable -> when (type) {
+                            ChannelType.JOIN_CONNECT -> {
+                                val channel = key.channel() as SocketChannel
+                                if (channel.finishConnect()) {
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(ChannelType.JOIN_CONNECT_WRITE)
+
+                                    logger.debug(tag, "completed connection to join server!")
+                                }
+                            }
+
+                            ChannelType.PREDECESSOR_CONNECT -> {
+                                val channel = key.channel() as SocketChannel
+                                if (channel.finishConnect()) {
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(ChannelType.PREDECESSOR_CONNECT_WRITE)
+
+                                    logger.debug(tag, "completed connection to predecessor!")
+                                }
+                            }
+
+                            else -> throw IllegalArgumentException("unknown CONNECT type: $type")
                         }
+
+                        key.isAcceptable -> when (type) {
+                            ChannelType.JOIN_ACCEPT -> {
+                                val serverChannel = key.channel() as ServerSocketChannel
+                                val channel = serverChannel.accept()
+                                channel.configureBlocking(false)
+                                channel.register(selector, SelectionKey.OP_READ, ChannelType.JOIN_ACCEPT_READ)
+                                logger.debug(tag, "accepting connection from ${channel.remoteAddress}")
+                            }
+
+                            ChannelType.SUCCESSOR_ACCEPT -> {
+                                val serverChannel = key.channel() as ServerSocketChannel
+                                val channel = serverChannel.accept()
+                                channel.configureBlocking(false)
+                                channel.register(selector, SelectionKey.OP_READ, ChannelType.SUCCESSOR_ACCEPT_READ)
+                                logger.debug(tag, "accepting connection from successor ${channel.remoteAddress}")
+                            }
+
+                            else -> throw IllegalArgumentException("unknown ACCEPT type: $type")
+                        }
+
+                        key.isReadable -> when (type) {
+                            ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ -> {
+                                val channel = key.channel() as ReadableByteChannel
+                                val dropAction = actionFactory.build(channel)
+                                        ?: throw IllegalArgumentException("unable to build DROP action")
+
+                                logger.info(tag, "received drop command for ${dropAction.node.addr}")
+                                processAction(dropAction)
+
+                                pendingSuccessorActions.values.forEach { it.add(dropAction) }
+                            }
+
+                            ChannelType.JOIN_ACCEPT_READ -> {
+                                val channel = key.channel() as SocketChannel
+                                val action = actionFactory.build(channel)
+                                        ?: throw IllegalArgumentException("joining node did not send JOIN action")
+
+                                logger.info(tag, "received join request from ${action.node.addr}")
+                                processAction(action)
+
+                                key.interestOps(SelectionKey.OP_WRITE)
+                                key.attach(ChannelType.JOIN_ACCEPT_WRITE)
+                            }
+
+
+                            ChannelType.JOIN_CONNECT_READ -> {
+                                val channel = key.channel() as SocketChannel
+                                membershipList = membershipListFactory.build(channel)
+                                        ?: throw IllegalArgumentException("join node did not send MEMBERSHIP")
+                                logger.info(tag, "received membership list: $membershipList")
+
+                                logger.debug(tag, "closing JOIN connection to ${channel.remoteAddress}")
+                                key.cancel()
+                            }
+
+                            ChannelType.SUCCESSOR_ACCEPT_READ -> {
+                                // connect to new successors
+                                val channel = key.channel() as SocketChannel
+                                val action = actionFactory.build(channel)
+                                        ?: throw IllegalArgumentException("successor did not send CONNECT action")
+
+                                logger.debug(tag, "successor identified as ${action.node.addr}")
+                                successorChannels[key] = action.node
+
+                                heartbeatTimerTask?.cancel()
+                                startSendingHeartbeats()
+
+                                key.interestOps(SelectionKey.OP_WRITE)
+                                key.attach(ChannelType.SUCCESSOR_ACTION_WRITE)
+                            }
+
+                            ChannelType.PREDECESSOR_ACTION_READ -> {
+                                val channel = key.channel() as SocketChannel
+                                val newActions = actionFactory.buildList(channel)
+
+                                if (newActions.isNotEmpty()) {
+                                    logger.debug(tag, "found ${newActions.size} actions")
+
+                                    newActions.forEach { processAction(it) }
+
+                                    pendingSuccessorActions.values.forEach { actions ->
+                                        actions.addAll(newActions)
+                                    }
+                                }
+                            }
+
+                            ChannelType.PREDECESSOR_HEARTBEAT_READ -> {
+                                val channel = key.channel() as DatagramChannel
+                                val action = actionFactory.build(channel)
+                                        ?: throw IllegalArgumentException("successor did not send HEARTBEAT action")
+                                logger.debug(tag, "identified heartbeat from ${action.node.addr}")
+
+                                heartbeatCoroutineChannel.send(
+                                        PredecessorHeartbeatMonitorController.Heartbeat(action.node)
+                                )
+                            }
+
+                            else -> throw IllegalArgumentException("unknown READ type: $type")
+                        }
+
+                        key.isWritable -> when (type) {
+                            ChannelType.JOIN_ACCEPT_WRITE -> {
+                                val channel = key.channel() as SocketChannel
+                                logger.debug(tag, "sending membership list to ${channel.remoteAddress}")
+                                sendMembershipList(channel)
+
+                                logger.debug(tag, "closing JOIN connection to ${channel.remoteAddress}")
+                                key.cancel()
+                            }
+
+                            ChannelType.JOIN_CONNECT_WRITE -> {
+                                val channel = key.channel() as SocketChannel
+
+                                logger.debug(tag, "sending join request to ${channel.remoteAddress}")
+                                sendAction(channel, Action.Join(Node(socketAddr, Instant.now())))
+
+                                key.interestOps(SelectionKey.OP_READ)
+                                key.attach(ChannelType.JOIN_CONNECT_READ)
+                            }
+
+                            ChannelType.PREDECESSOR_CONNECT_WRITE -> {
+                                val channel = key.channel() as SocketChannel
+
+                                logger.debug(tag, "identifying myself as ${self.addr}")
+                                sendAction(channel, Action.Connect(self))
+
+                                key.interestOps(SelectionKey.OP_READ)
+                                key.attach(ChannelType.PREDECESSOR_ACTION_READ)
+                            }
+
+                            ChannelType.SUCCESSOR_ACTION_WRITE -> {
+                                val node = successorChannels[key]
+                                        ?: throw IllegalStateException("unable to identify channel node!")
+
+                                val channel = key.channel() as SocketChannel
+                                pendingSuccessorActions.remove(node)
+                                        ?.let { actions ->
+                                            sendActions(channel, actions)
+                                        }
+                            }
+
+                            else -> throw IllegalArgumentException("unknown WRITE type: $type")
+                        }
+
+                        else -> throw Throwable("unknown channel and operation!")
+                    }
+
+                    // if membership list has changed, rebuild ring
+                    if (currentMembershipList != membershipList) {
+                        rebuildRing(selector, pipe.sink(), heartbeatCoroutineChannel)
+                    }
+                }
             }
-
-            val stalePredecessors = rebuildRings()
-            pendingPredecessorActions.minusAssign(stalePredecessors.map { it.addr })
         }
-    }
-
-    private fun rebuildRings(): List<Node> {
-        // Identify changes in successor list
-        val currentSuccessors = returnThreeSuccessors()
-
-        val staleSuccessors = successorNodes.minus(currentSuccessors)
-        val newSuccessors = currentSuccessors.minus(successorNodes)
-
-        if (staleSuccessors.isNotEmpty() || newSuccessors.isNotEmpty()) {
-            successorNodes = currentSuccessors
-            restartHeartbeatTimer()
-        }
-
-        // Identify changes in predecessor list
-        val currentPredecessors = returnThreePredecessors()
-
-        val stalePredecessors = predecessorNodes.minus(currentPredecessors)
-        val newPredecessors = currentPredecessors.minus(predecessorNodes)
-
-        if (stalePredecessors.isNotEmpty() || newPredecessors.isNotEmpty()) {
-            // TODO reset predecessor heartbeat timeouts!
-            predecessorNodes = currentPredecessors
-        }
-
-        return stalePredecessors
-    }
-
-    private fun processActions(actions: List<Action>) {
-        if (actions.isEmpty()) return
-
-        val newNodes = mutableListOf<Node>()
-        val staleNodes = mutableListOf<Node>()
-
-        for (action in actions.toSet()) {
-            when (action.type) {
-                Action.Type.JOIN -> {
-                    logger.debug(tag, "adding ${action.node.addr} to membership list")
-                    newNodes.add(action.node)
-                }
-
-                Action.Type.LEAVE -> {
-                    logger.debug(tag, "removing ${action.node.addr} from membership list")
-                    staleNodes.add(action.node)
-                }
-
-                Action.Type.DROP -> {
-                    logger.debug(tag, "dropping ${action.node.addr} from membership list")
-                    staleNodes.add(action.node)
-                }
-            }
-        }
-
-        val newList = membershipList
-                        .nodes
-                        .minus(staleNodes)
-                        .plus(newNodes)
-
-        membershipList = membershipList.copy(nodes = newList)
-    }
-
-
-    private fun getSelfNode(): Node {
-        membershipList.nodes.forEach { node ->
-            if (node.addr == socketAddr) return node
-        }
-
-        throw Throwable("couldn't find matching node for ${socketAddr.hostName}")
     }
 
     private fun restartHeartbeatTimer() {
@@ -300,70 +336,40 @@ class ClusterNode(
 
     // send heartbeat
     private fun startSendingHeartbeats() {
-        if (membershipList.nodes.size < 2) {
-            logger.debug(tag, "Nothing to do, membership list is empty!")
-            return
-        }
-
-        val successors = returnThreeSuccessors()
-
+        val currentSuccessors = successorChannels.values.toList()
         heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
-            successors.forEach { successor ->
-                DatagramSocket().use { socket ->
-                    logger.debug(tag, "sending heartbeat to ${successor.addr}")
-                    socket.send(DatagramPacket(byteArrayOf(), 0, successor.addr))
-                }
+                    currentSuccessors.forEach { successor ->
+                        DatagramSocket().use { socket ->
+                            logger.debug(tag, "sending ${heartbeatByteArray.size} byte heartbeat to ${successor.addr}")
+                            socket.send(DatagramPacket(heartbeatByteArray, heartbeatByteArray.size, successor.addr))
+                        }
+                    }
+        }
+    }
+
+    private fun processAction(action: Action) {
+        val nodes = when (action.type) {
+            Action.Type.JOIN -> {
+                logger.debug(tag, "adding ${action.node.addr} to membership list")
+                membershipList.nodes.plus(action.node)
             }
+
+            Action.Type.LEAVE -> {
+                logger.debug(tag, "removing ${action.node.addr} from membership list")
+                membershipList.nodes.filter { it != action.node }
+            }
+
+            Action.Type.DROP -> {
+                logger.debug(tag, "dropping ${action.node.addr} from membership list")
+                membershipList.nodes.filter { it != action.node }
+            }
+
+            Action.Type.HEARTBEAT -> throw IllegalStateException("HEARTBEAT actions should not be handled here!")
+            Action.Type.CONNECT -> throw IllegalStateException("CONNECT actions should not be handled here!")
         }
-    }
 
-    private fun startMonitoringHeartbeats(heartbeatChannel: DatagramChannel, errorChannel: Pipe.SinkChannel) {
-
-    }
-
-    // what to do when you get heartbeat
-    private fun processMissedPredecessorHeartbeat(channel: Pipe.SourceChannel) {
-        // TODO
-    }
-
-    private fun buildJoinAction(addr: SocketAddress): Action.Join {
-        return Action.Join(Node(addr as InetSocketAddress, Instant.now()))
-    }
-
-    private fun returnThreePredecessors(): List<Node> {
-        val nodes = membershipList.nodes
-        val position = nodes.indexOf(getSelfNode())
-        val size = nodes.size
-
-        val predecessors = mutableListOf<Node>()
-        predecessors.add(nodes.elementAt(Math.floorMod(position - 1, size)))
-        predecessors.add(nodes.elementAt(Math.floorMod(position - 2, size)))
-        predecessors.add(nodes.elementAt(Math.floorMod(position - 3, size)))
-
-        return when (size) {
-            1 -> emptyList()
-            2 -> predecessors.subList(0, 1)
-            3 -> predecessors.subList(0, 2)
-            else -> predecessors
-        }
-    }
-
-    private fun returnThreeSuccessors(): List<Node> {
-        val nodes = membershipList.nodes
-        val position = nodes.indexOf(getSelfNode())
-        val size = nodes.size
-
-        val successors = mutableListOf<Node>()
-        successors.add(nodes.elementAt(Math.floorMod(position + 1, size)))
-        successors.add(nodes.elementAt(Math.floorMod(position + 2, size)))
-        successors.add(nodes.elementAt(Math.floorMod(position + 3, size)))
-
-        return when (size) {
-            1 -> emptyList()
-            2 -> successors.subList(0, 1)
-            3 -> successors.subList(0, 2)
-            else -> successors
-        }
+        membershipList = MembershipList(nodes)
+        logger.info(tag, "new membership list: $membershipList")
     }
 
     private fun sendActions(channel: SocketChannel, actions: List<Action>) {
@@ -372,6 +378,8 @@ class ClusterNode(
                 Action.Type.JOIN -> Actions.Request.Type.JOIN
                 Action.Type.LEAVE -> Actions.Request.Type.REMOVE
                 Action.Type.DROP -> Actions.Request.Type.DROP
+                Action.Type.CONNECT -> Actions.Request.Type.CONNECT
+                Action.Type.HEARTBEAT -> Actions.Request.Type.HEARTBEAT
             }
 
             val now = Instant.now()
@@ -390,6 +398,10 @@ class ClusterNode(
 
             sendMessage(channel, messageBuilder.build(request.toByteArray()))
         }
+    }
+
+    private fun sendAction(channel: SocketChannel, action: Action) {
+        sendActions(channel, listOf(action))
     }
 
     private fun sendMembershipList(channel: SocketChannel) {
@@ -421,5 +433,133 @@ class ClusterNode(
             channel.write(buffer)
         }
         logger.debug(tag, "sendMessage: wrote ${buffer.position()} byte(s) to channel")
+    }
+
+    private fun rebuildRing(
+            selector: Selector,
+            writableByteChannel: WritableByteChannel,
+            heartbeatChannel: ReceiveChannel<PredecessorHeartbeatMonitorController.Heartbeat>
+    ) {
+        logger.info(tag, "rebuilding ring")
+
+        val currentPredecessors = returnThreePredecessors()
+        val currentSuccessors = returnThreeSuccessors()
+
+        val connectedPredecessor = predecessorChannels.values
+        val connectedSuccessors = successorChannels.values
+
+        // Identify changes in successor list
+        val staleSuccessors = connectedSuccessors.minus(currentSuccessors)
+        val newSuccessors = currentSuccessors.minus(connectedSuccessors)
+
+        // eliminate stale successors
+        for ((key, node) in successorChannels) {
+            if (node in staleSuccessors) {
+                val type = key.attachment() as ChannelType
+                logger.debug(tag, "closing connection of type ${type.name}")
+                successorChannels.remove(key)
+                key.cancel()
+            }
+        }
+
+        if (staleSuccessors.isNotEmpty() || newSuccessors.isNotEmpty()) {
+            logger.info(tag, "Stopping successor heartbeat timer")
+            heartbeatTimerTask?.cancel()
+
+            if (currentSuccessors.isNotEmpty()) {
+                logger.info(tag, "List of successors has changed: $currentSuccessors")
+                logger.info(tag, "starting successor heartbeat timer")
+                startSendingHeartbeats()
+            }
+        }
+
+        // Identify changes in predecessor list
+        val stalePredecessors = connectedPredecessor.minus(currentPredecessors)
+        val newPredecessors = currentPredecessors.minus(connectedPredecessor)
+
+        for ((key, node) in predecessorChannels) {
+            if (node in stalePredecessors) {
+                val type = key.attachment() as ChannelType
+                logger.debug(tag, "closing connection of type ${type.name}")
+                predecessorChannels.remove(key)
+                key.cancel()
+            }
+        }
+
+        for (node in newPredecessors) {
+            connectToPredecessor(selector, node)
+        }
+
+        if (stalePredecessors.isNotEmpty() || newPredecessors.isNotEmpty()) {
+            logger.info(tag, "Stopping predecessor heartbeat monitor")
+            predecessorMonitor.stop()
+
+            if (currentPredecessors.isNotEmpty()) {
+                logger.info(tag, "List of predecessors has changed: $currentPredecessors")
+                logger.info(tag, "starting predecessor heartbeat monitor")
+                predecessorMonitor.start(writableByteChannel, heartbeatChannel, currentPredecessors)
+            }
+        }
+    }
+
+    private fun connectToPredecessor(selector: Selector, predecessor: Node) {
+        val channel = SocketChannel.open()
+        channel.configureBlocking(false)
+
+        val selectionKey = channel.register(selector, SelectionKey.OP_CONNECT, ChannelType.PREDECESSOR_CONNECT)
+        predecessorChannels[selectionKey] = predecessor
+
+        logger.info(tag, "connecting to predecessor at ${predecessor.addr}")
+        channel.connect(predecessor.addr)
+    }
+
+    private fun returnThreePredecessors(): List<Node> {
+        val nodes = membershipList.nodes
+        val position = nodes.indexOf(self)
+        val size = nodes.size
+
+        val predecessors = mutableListOf<Node>()
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 1, size)))
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 2, size)))
+        predecessors.add(nodes.elementAt(Math.floorMod(position - 3, size)))
+
+        return when (size) {
+            1 -> emptyList()
+            2 -> predecessors.subList(0, 1)
+            3 -> predecessors.subList(0, 2)
+            else -> predecessors
+        }
+    }
+
+    private fun returnThreeSuccessors(): List<Node> {
+        val nodes = membershipList.nodes
+        val position = nodes.indexOf(self)
+        val size = nodes.size
+
+        val successors = mutableListOf<Node>()
+        successors.add(nodes.elementAt(Math.floorMod(position + 1, size)))
+        successors.add(nodes.elementAt(Math.floorMod(position + 2, size)))
+        successors.add(nodes.elementAt(Math.floorMod(position + 3, size)))
+
+        return when (size) {
+            1 -> emptyList()
+            2 -> successors.subList(0, 1)
+            3 -> successors.subList(0, 2)
+            else -> successors
+        }
+    }
+
+    private fun buildHeartbeat(self: Node): Actions.Request {
+        val timestamp = Actions.Timestamp.newBuilder()
+                .setSecondsSinceEpoch(self.joinedAt.epochSecond)
+                .setNanoSeconds(self.joinedAt.nano)
+                .build()
+
+        return Actions.Request.newBuilder()
+                .setType(Actions.Request.Type.HEARTBEAT)
+                .setHostName(self.addr.hostString)
+                .setPort(self.addr.port)
+                .setTimestamp(timestamp)
+                .build()
     }
 }

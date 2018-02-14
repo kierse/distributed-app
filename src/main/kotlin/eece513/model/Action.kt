@@ -2,7 +2,7 @@ package eece513.model
 
 sealed class Action {
     enum class Type {
-        JOIN, LEAVE, DROP
+        JOIN, LEAVE, DROP, CONNECT, HEARTBEAT
     }
 
     abstract val type: Type
@@ -18,5 +18,13 @@ sealed class Action {
 
     data class Drop(override val node: Node) : Action() {
         override val type = Type.DROP
+    }
+
+    data class Connect(override val node: Node): Action() {
+        override val type = Type.CONNECT
+    }
+
+    data class Heartbeat(override val node: Node): Action() {
+        override val type = Type.HEARTBEAT
     }
 }

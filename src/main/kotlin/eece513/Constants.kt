@@ -5,6 +5,8 @@ const val JOIN_PORT = 6971
 
 const val MESSAGE_HEADER_SIZE = 2 // in bytes
 
+const val DATAGRAM_PACKET_LIMIT = 128 // in bytes
+
 const val RELATIONSHIP_COUNT = 3
 
 const val HEARTBEAT_INTERVAL = 1500L

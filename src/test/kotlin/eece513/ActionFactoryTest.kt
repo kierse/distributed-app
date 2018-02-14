@@ -17,7 +17,7 @@ class ActionFactoryTest {
     private val messageReader = MessageReader(logger)
 
     @Test
-    fun build__one_action() {
+    fun buildList__one_action() {
         val expected = listOf(createAction())
 
         val request = createActionRequest(expected.first())
@@ -27,13 +27,13 @@ class ActionFactoryTest {
         val channel = Channels.newChannel(stream)
 
         val result = ActionFactory(messageReader, logger)
-                .build(channel)
+                .buildList(channel)
 
         assertEquals(expected, result)
     }
 
     @Test
-    fun build__two_actions() {
+    fun buildList__two_actions() {
         val expected = listOf(
                 createAction(6970),
                 createAction(6971)
@@ -47,7 +47,23 @@ class ActionFactoryTest {
         val channel = Channels.newChannel(stream)
 
         val result = ActionFactory(messageReader, logger)
-                .build(channel)
+                .buildList(channel)
+
+        assertEquals(expected, result)
+    }
+
+    @Test
+    fun build() {
+        val expected = createAction()
+
+        val request = createActionRequest(expected)
+        val message = messageBuilder.build(request.toByteArray())
+
+        val stream = ByteArrayInputStream(message.array())
+        val channel = Channels.newChannel(stream)
+
+        val result = ActionFactory(messageReader, logger)
+                .buildList(channel)
 
         assertEquals(expected, result)
     }
@@ -67,6 +83,7 @@ class ActionFactoryTest {
             Action.Type.JOIN -> Actions.Request.Type.JOIN
             Action.Type.LEAVE -> Actions.Request.Type.REMOVE
             Action.Type.DROP -> Actions.Request.Type.DROP
+            Action.Type.CONNECT -> Actions.Request.Type.CONNECT
         }
 
         return builder
