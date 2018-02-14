@@ -22,7 +22,7 @@ fun main(args: Array<String>) {
     val membershipListFactory = MembershipListFactory(messageReader)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
-    val node = ClusterNode2(
+    val node = ClusterNode(
             predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
     )
     val address = if (args.isNotEmpty()) {
@@ -34,7 +34,7 @@ fun main(args: Array<String>) {
     node.start(address)
 }
 
-class ClusterNode2(
+class ClusterNode(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
@@ -63,7 +63,7 @@ class ClusterNode2(
         SUCCESSOR_HEARTBEAT_WRITE
     }
 
-    private val tag = ClusterNode2::class.java.simpleName
+    private val tag = ClusterNode::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
     private val localAddr = InetAddress.getLocalHost()
