@@ -213,7 +213,6 @@ class ClusterNode(
                                     logger.debug(tag, "found ${dropActions.size} drop actions")
 
                                     dropActions.forEach { dropAction ->
-                                        logger.info(tag, "dropping ${dropAction.node.addr}")
                                         processAction(dropAction)
                                     }
 
@@ -345,21 +344,16 @@ class ClusterNode(
         }
     }
 
-    private fun restartHeartbeatTimer() {
-        heartbeatTimerTask?.cancel()
-        startSendingHeartbeats()
-    }
-
     // send heartbeat
     private fun startSendingHeartbeats() {
         val currentSuccessors = successorChannels.values.toList()
         heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
-                    currentSuccessors.forEach { successor ->
-                        DatagramSocket().use { socket ->
-                            logger.debug(tag, "sending ${heartbeatByteArray.size} byte heartbeat to ${successor.addr}")
-                            socket.send(DatagramPacket(heartbeatByteArray, heartbeatByteArray.size, successor.addr))
-                        }
-                    }
+            DatagramSocket().use { socket ->
+                currentSuccessors.forEach { successor ->
+                    logger.debug(tag, "sending heartbeat to ${successor.addr}")
+                    socket.send(DatagramPacket(heartbeatByteArray, heartbeatByteArray.size, successor.addr))
+                }
+            }
         }
     }
 
