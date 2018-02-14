@@ -1,7 +1,5 @@
 # README #
 
-This README would normally document whatever steps are necessary to get your application up and running.
-
 ## UPGRADE FROM JAVA7/8 TO JAVA9 ###
 ###To install Java9###
 ```
@@ -10,6 +8,6 @@ This README would normally document whatever steps are necessary to get your app
 ```
 ###To remove old Java versions###
 ```
-sudo yum remove java-1.8.0-openjdk
-sudo yum remove java-1.7.0-openjdk
+> sudo yum remove java-1.8.0-openjdk
+> sudo yum remove java-1.7.0-openjdk
 ```
