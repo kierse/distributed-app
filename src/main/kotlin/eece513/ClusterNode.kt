@@ -462,11 +462,13 @@ class ClusterNode(
         val staleSuccessors = connectedSuccessors.minus(currentSuccessors)
         val newSuccessors = currentSuccessors.minus(connectedSuccessors)
 
-        // eliminate stale successors
-        for ((key, node) in successorChannels) {
+        val successorIterator = successorChannels.iterator()
+        while (successorIterator.hasNext()) {
+            val (key, node) = successorIterator.next()
+            successorIterator.remove()
+
             if (node in staleSuccessors) {
-                val type = key.attachment() as ChannelType
-                logger.debug(tag, "closing connection of type ${type.name}")
+                logger.debug(tag, "closing successor connection to ${node.addr}")
                 successorChannels.remove(key)
                 key.cancel()
             }
@@ -487,10 +489,13 @@ class ClusterNode(
         val stalePredecessors = connectedPredecessor.minus(currentPredecessors)
         val newPredecessors = currentPredecessors.minus(connectedPredecessor)
 
-        for ((key, node) in predecessorChannels) {
+        val predecessorIterator = predecessorChannels.iterator()
+        while (predecessorIterator.hasNext()) {
+            val (key, node) = predecessorIterator.next()
+            predecessorIterator.remove()
+
             if (node in stalePredecessors) {
-                val type = key.attachment() as ChannelType
-                logger.debug(tag, "closing connection of type ${type.name}")
+                logger.debug(tag, "closing predecessor connection to ${node.addr}")
                 predecessorChannels.remove(key)
                 key.cancel()
             }
