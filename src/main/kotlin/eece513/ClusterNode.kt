@@ -6,6 +6,7 @@ import eece513.model.Node
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.ReceiveChannel
 import kotlinx.coroutines.experimental.runBlocking
+import java.io.IOException
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -65,8 +66,8 @@ class ClusterNode2(
     private val tag = ClusterNode2::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
-    //    private val localAddr = InetAddress.getLocalHost()
-    private val localAddr = InetAddress.getByName("127.0.0.1")
+    private val localAddr = InetAddress.getLocalHost()
+//    private val localAddr = InetAddress.getByName("127.0.0.1")
 
     private var membershipList = MembershipList(emptyList())
 
@@ -162,11 +163,21 @@ class ClusterNode2(
 
                             ChannelType.PREDECESSOR_CONNECT -> {
                                 val channel = key.channel() as SocketChannel
-                                if (channel.finishConnect()) {
-                                    key.interestOps(SelectionKey.OP_WRITE)
-                                    key.attach(ChannelType.PREDECESSOR_CONNECT_WRITE)
+                                val predecessor = predecessorChannels[key]
+                                        ?: throw IllegalStateException("unable to locate predecessor node")
+                                try {
+                                    if (channel.finishConnect()) {
+                                        key.interestOps(SelectionKey.OP_WRITE)
+                                        key.attach(ChannelType.PREDECESSOR_CONNECT_WRITE)
 
-                                    logger.debug(tag, "completed connection to predecessor!")
+                                        logger.debug(tag, "completed connection to predecessor at ${predecessor.addr}")
+                                    }
+                                } catch (_: IOException) {
+                                    logger.warn(tag, "unable to establish connection to predecessor at ${predecessor.addr}. Dropping!")
+                                    val dropAction = Action.Drop(predecessor)
+
+                                    processAction(dropAction)
+                                    pendingSuccessorActions.values.forEach { it.add(dropAction) }
                                 }
                             }
 
