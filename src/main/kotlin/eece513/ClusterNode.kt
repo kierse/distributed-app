@@ -6,6 +6,7 @@ import eece513.model.Node
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.ReceiveChannel
 import kotlinx.coroutines.experimental.runBlocking
+import java.io.IOException
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.channels.*
@@ -21,7 +22,7 @@ fun main(args: Array<String>) {
     val membershipListFactory = MembershipListFactory(messageReader)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
-    val node = ClusterNode2(
+    val node = ClusterNode(
             predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
     )
     val address = if (args.isNotEmpty()) {
@@ -33,7 +34,7 @@ fun main(args: Array<String>) {
     node.start(address)
 }
 
-class ClusterNode2(
+class ClusterNode(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
@@ -62,11 +63,11 @@ class ClusterNode2(
         SUCCESSOR_HEARTBEAT_WRITE
     }
 
-    private val tag = ClusterNode2::class.java.simpleName
+    private val tag = ClusterNode::class.java.simpleName
 
     private lateinit var socketAddr: InetSocketAddress
-    //    private val localAddr = InetAddress.getLocalHost()
-    private val localAddr = InetAddress.getByName("127.0.0.1")
+    private val localAddr = InetAddress.getLocalHost()
+//    private val localAddr = InetAddress.getByName("127.0.0.1")
 
     private var membershipList = MembershipList(emptyList())
 
@@ -162,11 +163,21 @@ class ClusterNode2(
 
                             ChannelType.PREDECESSOR_CONNECT -> {
                                 val channel = key.channel() as SocketChannel
-                                if (channel.finishConnect()) {
-                                    key.interestOps(SelectionKey.OP_WRITE)
-                                    key.attach(ChannelType.PREDECESSOR_CONNECT_WRITE)
+                                val predecessor = predecessorChannels[key]
+                                        ?: throw IllegalStateException("unable to locate predecessor node")
+                                try {
+                                    if (channel.finishConnect()) {
+                                        key.interestOps(SelectionKey.OP_WRITE)
+                                        key.attach(ChannelType.PREDECESSOR_CONNECT_WRITE)
 
-                                    logger.debug(tag, "completed connection to predecessor!")
+                                        logger.debug(tag, "completed connection to predecessor at ${predecessor.addr}")
+                                    }
+                                } catch (_: IOException) {
+                                    logger.warn(tag, "unable to establish connection to predecessor at ${predecessor.addr}. Dropping!")
+                                    val dropAction = Action.Drop(predecessor)
+
+                                    processAction(dropAction)
+                                    pendingSuccessorActions.values.forEach { it.add(dropAction) }
                                 }
                             }
 
@@ -196,13 +207,18 @@ class ClusterNode2(
                         key.isReadable -> when (type) {
                             ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ -> {
                                 val channel = key.channel() as ReadableByteChannel
-                                val dropAction = actionFactory.build(channel)
-                                        ?: throw IllegalArgumentException("unable to build DROP action")
+                                val dropActions = actionFactory.buildList(channel)
 
-                                logger.info(tag, "received drop command for ${dropAction.node.addr}")
-                                processAction(dropAction)
+                                if (dropActions.isNotEmpty()) {
+                                    logger.debug(tag, "found ${dropActions.size} drop actions")
 
-                                pendingSuccessorActions.values.forEach { it.add(dropAction) }
+                                    dropActions.forEach { dropAction ->
+                                        logger.info(tag, "dropping ${dropAction.node.addr}")
+                                        processAction(dropAction)
+                                    }
+
+                                    pendingSuccessorActions.values.forEach { it.addAll(dropActions) }
+                                }
                             }
 
                             ChannelType.JOIN_ACCEPT_READ -> {
