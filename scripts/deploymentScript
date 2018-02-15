@@ -8,7 +8,6 @@ function displayHelp {
     echo "usage: ./deploymentScript <path to pem file> <action>"
     echo
     echo " Actions:"
-    echo "          []                   (transfer jar file)"
     echo "          [--jar]              (transfer jar file)"
     echo "          [--all]              (all of the above)"
     echo "          [--help]             (print this message)"
@@ -17,8 +16,7 @@ function displayHelp {
 }
 
 if [ "$#" -eq 0 ]; then
-    all=true
-    instruction=true
+    displayHelp
 fi
 
 for i in "$@"; do
@@ -70,8 +68,11 @@ do
 	echo ---
     echo "instance: $url"
 
+    ssh -i "$pem" ec2-user@"$url" -o StrictHostKeyChecking=no
+
+
 	echo "attempting to kill running node..."
- 	ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-app-1.0.jar' < /dev/null
+    ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-app-1.0.jar' < /dev/null
 
     # jar files
     if [ ! -z "$jar" ] || [ ! -z "$all" ]; then
