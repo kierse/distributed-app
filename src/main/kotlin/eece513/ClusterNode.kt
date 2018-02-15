@@ -287,7 +287,7 @@ class ClusterNode(
                                 val channel = key.channel() as SocketChannel
 
                                 logger.debug(tag, "sending join request to ${channel.remoteAddress}")
-                                sendAction(channel, Action.Join(Node(socketAddr, Instant.now())))
+                                sendAction(channel, Action.Join(self))
 
                                 key.interestOps(SelectionKey.OP_READ)
                                 key.attach(ChannelType.JOIN_CONNECT_READ)
@@ -331,8 +331,6 @@ class ClusterNode(
 
     // send heartbeat
     private fun startSendingHeartbeats() {
-        if (successorChannels.size <= 1) return
-
         val currentSuccessors = successorChannels.values.toList()
         heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
             DatagramSocket().use { socket ->
@@ -379,10 +377,10 @@ class ClusterNode(
                 Action.Type.HEARTBEAT -> Actions.Request.Type.HEARTBEAT
             }
 
-            val now = Instant.now()
+            val time = action.node.joinedAt
             val timestamp = Actions.Timestamp.newBuilder()
-                    .setSecondsSinceEpoch(now.epochSecond)
-                    .setNanoSeconds(now.nano)
+                    .setSecondsSinceEpoch(time.epochSecond)
+                    .setNanoSeconds(time.nano)
                     .build()
 
             val addr = action.node.addr
