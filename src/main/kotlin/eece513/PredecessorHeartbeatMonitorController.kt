@@ -20,33 +20,63 @@ class PredecessorHeartbeatMonitorController(
         private val tag = PredecessorHeartbeatMonitor::class.java.simpleName
 
         private val nodeToChannel = mutableMapOf<Node, SendChannel<Boolean>>()
+        private val channelToJob = mutableMapOf<SendChannel<Boolean>, Job>()
 
         init {
-            logger.info(tag, "starting predecessor heartbeat monitor!")
             for (node in predecessors) {
                 val channel = Channel<Boolean>()
-                createWatcher(node, channel)
                 nodeToChannel[node] = channel
+
+                val job = createWatcher(node, channel)
+                channelToJob[channel] = job
+
+                job.invokeOnCompletion {
+                    nodeToChannel.remove(node)
+                    channelToJob.remove(channel)
+                }
 
                 logger.info(tag, "monitoring heartbeats from ${node.addr}")
             }
         }
 
         override fun invoke() {
+            logger.info(tag, "starting predecessor heartbeat monitor!")
+
             try {
                 runBlocking {
+                    // Thread is up and running. Start watchers..
+                    channelToJob.values.forEach { it.start() }
+
                     while (isActive) {
                         // Attention: this will block until the event channel has data!
                         val heartbeat = heartbeatChannel.receive()
-                        val address = heartbeat.node
 
-                        val channel = nodeToChannel[address]
+                        val node = heartbeat.node
+                        val channel = nodeToChannel[node]
+
+                        nodeToChannel.keys.forEach {
+                            logger.debug(tag, "$it == $node -> ${it == node}")
+                        }
+
                         if (channel != null) {
                             channel.send(true)
                             continue
+                        } else {
+                            logger.debug(tag, "unable to find watcher channel!")
                         }
 
-                        logger.warn(tag, "received heartbeat notification for unknown address: $address. Ignoring!")
+//                        if (channel != null) {
+//                            val job = channelToJob.getValue(channel)
+//                            if (job.isCompleted) {
+//                                channelToJob.remove(channel)
+//                                nodeToChannel.remove(heartbeat.node)
+//                            } else {
+//                                channel.send(true)
+//                                continue
+//                            }
+//                        }
+
+                        logger.warn(tag, "received heartbeat notification for unknown node: $node. Ignoring!")
                     }
                 }
             } catch (_: InterruptedException) {
@@ -55,7 +85,7 @@ class PredecessorHeartbeatMonitorController(
         }
 
         private fun createWatcher(node: Node, channel: ReceiveChannel<Boolean>) =
-                launch {
+                launch(start = CoroutineStart.LAZY) {
                     while (isActive) {
                         val heartbeat = withTimeoutOrNull(HEARTBEAT_TIMEOUT) {
                             channel.receive() // suspends until channel has data
@@ -90,7 +120,6 @@ class PredecessorHeartbeatMonitorController(
 
                         // shutdown channel
                         logger.debug(tag, "shutting down channel for $address")
-                        channel.cancel()
                         break
                     }
 
