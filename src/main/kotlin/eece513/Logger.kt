@@ -18,7 +18,7 @@ class TinyLogWrapper(logLocation: String?) : Logger {
     init {
         val config = Configurator
                 .currentConfig()
-                .formatPattern("{date:yyyy-MM-dd HH:mm:ss} {thread} {level}: {message}")
+                .formatPattern("{date:yyyy-MM-dd HH:mm:ss:S} {thread} {level}: {message}")
                 .level(Level.DEBUG)
 
         if (logLocation != null) {

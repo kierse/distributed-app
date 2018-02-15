@@ -5,13 +5,14 @@ import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import java.nio.channels.WritableByteChannel
 import kotlin.concurrent.thread
+import kotlin.coroutines.experimental.CoroutineContext
 
 class PredecessorHeartbeatMonitorController(
         private val messageBuilder: MessageBuilder,
         private val logger: Logger
 ) {
     private class PredecessorHeartbeatMonitor(
-            predecessors: List<Node>,
+            private val predecessors: List<Node>,
             private val writableByteChannel: WritableByteChannel,
             private val heartbeatChannel: ReceiveChannel<Heartbeat>,
             private val messageBuilder: MessageBuilder,
@@ -22,30 +23,43 @@ class PredecessorHeartbeatMonitorController(
         private val nodeToChannel = mutableMapOf<Node, SendChannel<Boolean>>()
         private val channelToJob = mutableMapOf<SendChannel<Boolean>, Job>()
 
-        init {
-            for (node in predecessors) {
-                val channel = Channel<Boolean>()
-                nodeToChannel[node] = channel
-
-                val job = createWatcher(node, channel)
-                channelToJob[channel] = job
-
-                job.invokeOnCompletion {
-                    nodeToChannel.remove(node)
-                    channelToJob.remove(channel)
-                }
-
-                logger.info(tag, "monitoring heartbeats from ${node.addr}")
-            }
-        }
+//        init {
+//            for (node in predecessors) {
+//                val channel = Channel<Boolean>()
+//                nodeToChannel[node] = channel
+//
+//                val job = createWatcher(node, channel)
+//                channelToJob[channel] = job
+//
+//                job.invokeOnCompletion {
+//                    nodeToChannel.remove(node)
+//                    channelToJob.remove(channel)
+//                }
+//
+//                logger.info(tag, "monitoring heartbeats from ${node.addr}")
+//            }
+//        }
 
         override fun invoke() {
             logger.info(tag, "starting predecessor heartbeat monitor!")
 
             try {
                 runBlocking {
-                    // Thread is up and running. Start watchers..
-                    channelToJob.values.forEach { it.start() }
+                    for (node in predecessors) {
+                        val channel = Channel<Boolean>()
+                        nodeToChannel[node] = channel
+
+                        val job = createWatcher(coroutineContext, node, channel)
+                        channelToJob[channel] = job
+
+                        job.invokeOnCompletion {
+                            logger.debug(tag, "clearning up $node watcher")
+                            nodeToChannel.remove(node)
+                            channelToJob.remove(channel)
+                        }
+
+                        logger.info(tag, "monitoring heartbeats from ${node.addr}")
+                    }
 
                     while (isActive) {
                         // Attention: this will block until the event channel has data!
@@ -53,10 +67,6 @@ class PredecessorHeartbeatMonitorController(
 
                         val node = heartbeat.node
                         val channel = nodeToChannel[node]
-
-                        nodeToChannel.keys.forEach {
-                            logger.debug(tag, "$it == $node -> ${it == node}")
-                        }
 
                         if (channel != null) {
                             channel.send(true)
@@ -80,12 +90,12 @@ class PredecessorHeartbeatMonitorController(
                     }
                 }
             } catch (_: InterruptedException) {
-                // do nothing
+                logger.info(tag, "predecessor monitor halted")
             }
         }
 
-        private fun createWatcher(node: Node, channel: ReceiveChannel<Boolean>) =
-                launch(start = CoroutineStart.LAZY) {
+        private fun createWatcher(context: CoroutineContext, node: Node, channel: ReceiveChannel<Boolean>) =
+                launch(context = context) {
                     while (isActive) {
                         val heartbeat = withTimeoutOrNull(HEARTBEAT_TIMEOUT) {
                             channel.receive() // suspends until channel has data
