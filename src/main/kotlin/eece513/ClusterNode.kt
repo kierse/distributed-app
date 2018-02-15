@@ -57,8 +57,6 @@ class ClusterNode(
         PREDECESSOR_MISSED_HEARTBEAT_READ,
         SUCCESSOR_ACCEPT,
         SUCCESSOR_ACCEPT_READ,
-        SUCCESSOR_ACTION,
-        SUCCESSOR_ACTION_READ,
         SUCCESSOR_ACTION_WRITE,
         SUCCESSOR_HEARTBEAT_WRITE
     }
@@ -119,7 +117,6 @@ class ClusterNode(
             }
 
             val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
-                    .withDefault { mutableListOf() }
 
             while (selector.select() >= 0) {
                 val keyIterator = selector.selectedKeys().iterator()
@@ -211,12 +208,13 @@ class ClusterNode(
                                         ?: throw IllegalArgumentException("joining node did not send JOIN action")
 
                                 logger.info(tag, "received join request from ${action.node.addr}")
+
                                 processAction(action)
+                                pendingSuccessorActions.values.forEach { it.add(action) }
 
                                 key.interestOps(SelectionKey.OP_WRITE)
                                 key.attach(ChannelType.JOIN_ACCEPT_WRITE)
                             }
-
 
                             ChannelType.JOIN_CONNECT_READ -> {
                                 val channel = key.channel() as SocketChannel
@@ -232,16 +230,20 @@ class ClusterNode(
                                 // connect to new successors
                                 val channel = key.channel() as SocketChannel
                                 val action = actionFactory.build(channel)
-                                        ?: throw IllegalArgumentException("successor did not send CONNECT action")
 
-                                logger.debug(tag, "successor identified as ${action.node.addr}")
-                                successorChannels[key] = action.node
+                                if (action == null) {
+                                    logger.warn(tag, "successor didn't complete connect")
+                                } else {
+                                    logger.debug(tag, "successor identified as ${action.node.addr}")
+                                    successorChannels[key] = action.node
+                                    pendingSuccessorActions[action.node] = mutableListOf()
 
-                                heartbeatTimerTask?.cancel()
-                                startSendingHeartbeats()
+                                    heartbeatTimerTask?.cancel()
+                                    startSendingHeartbeats()
 
-                                key.interestOps(SelectionKey.OP_WRITE)
-                                key.attach(ChannelType.SUCCESSOR_ACTION_WRITE)
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(ChannelType.SUCCESSOR_ACTION_WRITE)
+                                }
                             }
 
                             ChannelType.PREDECESSOR_ACTION_READ -> {
@@ -308,9 +310,15 @@ class ClusterNode(
                                         ?: throw IllegalStateException("unable to identify channel node!")
 
                                 val channel = key.channel() as SocketChannel
-                                pendingSuccessorActions.remove(node)
+                                pendingSuccessorActions.put(node, mutableListOf())
+                                        ?.takeIf { it.isNotEmpty() }
                                         ?.let { actions ->
-                                            sendActions(channel, actions)
+                                            try {
+                                                logger.info(tag, "sending ${actions.size} to $node")
+                                                sendActions(channel, actions)
+                                            } catch (e: IOException) {
+                                                logger.warn(tag, "error writing to success channel for ${node.addr}!")
+                                            }
                                         }
                             }
 
@@ -450,11 +458,10 @@ class ClusterNode(
         val successorIterator = successorChannels.iterator()
         while (successorIterator.hasNext()) {
             val (key, node) = successorIterator.next()
-            successorIterator.remove()
 
             if (node in staleSuccessors) {
                 logger.debug(tag, "closing successor connection to ${node.addr}")
-                successorChannels.remove(key)
+                successorIterator.remove()
                 key.cancel()
             }
         }
@@ -477,11 +484,10 @@ class ClusterNode(
         val predecessorIterator = predecessorChannels.iterator()
         while (predecessorIterator.hasNext()) {
             val (key, node) = predecessorIterator.next()
-            predecessorIterator.remove()
 
             if (node in stalePredecessors) {
                 logger.debug(tag, "closing predecessor connection to ${node.addr}")
-                predecessorChannels.remove(key)
+                predecessorIterator.remove()
                 key.cancel()
             }
         }
