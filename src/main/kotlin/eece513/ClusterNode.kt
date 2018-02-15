@@ -65,11 +65,9 @@ class ClusterNode(
 
     private val tag = ClusterNode::class.java.simpleName
 
-    private lateinit var socketAddr: InetSocketAddress
     private val localAddr = InetAddress.getLocalHost()
 //    private val localAddr = InetAddress.getByName("127.0.0.1")
-
-    private var membershipList = MembershipList(emptyList())
+    private val socketAddr: InetSocketAddress = ServerSocket(0).use { InetSocketAddress(localAddr, it.localPort) }
 
     private val timer = Timer("HEARTBEAT-TIMER", true)
     private var heartbeatTimerTask: TimerTask? = null
@@ -77,30 +75,17 @@ class ClusterNode(
     private val successorChannels = mutableMapOf<SelectionKey, Node>()
     private val predecessorChannels = mutableMapOf<SelectionKey, Node>()
 
-    private val self: Node by lazy {
-        membershipList
-                .nodes
-                .first { it.addr == socketAddr }
-                .also {
-                    logger.debug(tag, "self node: $it")
-                }
-    }
+    private val self = Node(socketAddr, Instant.now())
+    private var membershipList = MembershipList(listOf(self))
 
-    private val heartbeatByteArray: ByteArray by lazy {
-        buildHeartbeat(self)
-                .toByteArray()
-                .also {
-                    logger.debug(tag, "heartbeat is ${it.size} byte(s) long")
-                }
-    }
+    private val heartbeatByteArray = buildHeartbeat(self).toByteArray()
 
     fun start(address: SocketAddress?) = runBlocking {
-        socketAddr = ServerSocket(0).use { InetSocketAddress(localAddr, it.localPort) }
-
         if (address == null) {
             println("Join address: ${localAddr.hostName}")
-            membershipList = MembershipList(listOf(Node(socketAddr, Instant.now())))
         }
+
+        logger.info(tag, "self node: $self")
 
         Selector.open().use { selector ->
             logger.info(tag, "listening for TCP connections on $socketAddr")
@@ -190,7 +175,7 @@ class ClusterNode(
                                 val channel = serverChannel.accept()
                                 channel.configureBlocking(false)
                                 channel.register(selector, SelectionKey.OP_READ, ChannelType.JOIN_ACCEPT_READ)
-                                logger.debug(tag, "accepting connection from ${channel.remoteAddress}")
+                                logger.debug(tag, "accepting connection from new node at ${channel.remoteAddress}")
                             }
 
                             ChannelType.SUCCESSOR_ACCEPT -> {
@@ -346,6 +331,8 @@ class ClusterNode(
 
     // send heartbeat
     private fun startSendingHeartbeats() {
+        if (successorChannels.size <= 1) return
+
         val currentSuccessors = successorChannels.values.toList()
         heartbeatTimerTask = timer.scheduleAtFixedRate(delay = 0, period = HEARTBEAT_INTERVAL) {
             DatagramSocket().use { socket ->
@@ -455,8 +442,8 @@ class ClusterNode(
         val currentPredecessors = returnThreePredecessors()
         val currentSuccessors = returnThreeSuccessors()
 
-        val connectedPredecessor = predecessorChannels.values
-        val connectedSuccessors = successorChannels.values
+        val connectedPredecessors: Collection<Node> = predecessorChannels.values
+        val connectedSuccessors: Collection<Node> = successorChannels.values
 
         // Identify changes in successor list
         val staleSuccessors = connectedSuccessors.minus(currentSuccessors)
@@ -486,8 +473,8 @@ class ClusterNode(
         }
 
         // Identify changes in predecessor list
-        val stalePredecessors = connectedPredecessor.minus(currentPredecessors)
-        val newPredecessors = currentPredecessors.minus(connectedPredecessor)
+        val stalePredecessors = connectedPredecessors.minus(currentPredecessors)
+        val newPredecessors = currentPredecessors.minus(connectedPredecessors)
 
         val predecessorIterator = predecessorChannels.iterator()
         while (predecessorIterator.hasNext()) {
