@@ -68,9 +68,6 @@ do
 	echo ---
     echo "instance: $url"
 
-    ssh -i "$pem" ec2-user@"$url" -o StrictHostKeyChecking=no
-
-
 	echo "attempting to kill running node..."
     ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-app-1.0.jar' < /dev/null
 

@@ -262,25 +262,27 @@ class ClusterNode(
                                 if (newActions.isNotEmpty()) {
                                     logger.debug(tag, "found ${newActions.size} actions")
 
-                                    newActions
-                                            .filterNot { action ->
-                                                // if remove == true, do NOT keep this action
-                                                createdActions.remove(action)
-                                            }
-                                            .map { action ->
-                                                when (action.type) {
-                                                    Action.Type.LEAVE -> {
-                                                        Action.Drop(action.node)
-                                                                .also {
-                                                                    createdActions.add(it)
-                                                                }
-                                                    }
-                                                    else -> action
-                                                }
-                                            }
-                                            .forEach { processAction(it) }
+                                    val usableActions = mutableListOf<Action>()
+                                    for (action in newActions) {
+                                        val usableAction = if (action.type == Action.Type.LEAVE) {
+                                            Action.Drop(action.node)
+                                        } else {
+                                            action
+                                        }
 
-                                    pendingSuccessorActions.values.forEach { actions -> actions.addAll(newActions) }
+                                        // If the usableAction exists in createdActions, remove it and move on to the
+                                        // next action. It has completed a full circle around the ring and doesn't need
+                                        // to be pushed on to our successors
+                                        if (createdActions.remove(usableAction)) {
+                                            logger.debug(tag, "dropping $usableAction")
+                                            continue
+                                        }
+
+                                        processAction(usableAction)
+                                        usableActions.add(usableAction)
+                                    }
+
+                                    pendingSuccessorActions.values.forEach { actions -> actions.addAll(usableActions) }
 
                                 }
                             }
@@ -316,6 +318,8 @@ class ClusterNode(
                                 val joinAction = Action.Join(self)
                                 sendAction(channel, joinAction)
 
+                                // The node running this is attempting to join a running cluster. It creates the
+                                // join action so it should be the one to stop sending it around the ring
                                 createdActions.add(joinAction)
 
                                 key.interestOps(SelectionKey.OP_READ)
