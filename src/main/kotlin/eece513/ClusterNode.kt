@@ -19,11 +19,12 @@ fun main(args: Array<String>) {
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
     val actionFactory = ActionFactory(messageReader)
+    val nodeFactory = NodeFactory(messageReader)
     val membershipListFactory = MembershipListFactory(messageReader)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(messageBuilder, logger)
 
     val node = ClusterNode(
-            predecessorMonitor, messageBuilder, actionFactory, membershipListFactory, logger
+            predecessorMonitor, messageBuilder, actionFactory, nodeFactory, membershipListFactory, logger
     )
     val address = if (args.isNotEmpty()) {
         InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
@@ -38,6 +39,7 @@ class ClusterNode(
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
         private val messageBuilder: MessageBuilder,
         private val actionFactory: ActionFactory,
+        private val nodeFactory: NodeFactory,
         private val membershipListFactory: MembershipListFactory,
         private val logger: Logger
 ) {
@@ -117,6 +119,7 @@ class ClusterNode(
             }
 
             val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+            val createdActions = mutableListOf<Action>()
 
             while (selector.select() >= 0) {
                 val keyIterator = selector.selectedKeys().iterator()
@@ -160,6 +163,7 @@ class ClusterNode(
 
                                     processAction(dropAction)
                                     pendingSuccessorActions.values.forEach { it.add(dropAction) }
+                                    createdActions.add(dropAction)
                                 }
                             }
 
@@ -189,13 +193,18 @@ class ClusterNode(
                         key.isReadable -> when (type) {
                             ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ -> {
                                 val channel = key.channel() as ReadableByteChannel
-                                val dropActions = actionFactory.buildList(channel)
+                                val nodes = nodeFactory.buildList(channel)
 
-                                if (dropActions.isNotEmpty()) {
-                                    logger.debug(tag, "found ${dropActions.size} drop actions")
+                                if (nodes.isNotEmpty()) {
+                                    logger.debug(tag, "found ${nodes.size} nodes to drop")
 
-                                    dropActions.forEach { dropAction ->
-                                        processAction(dropAction)
+                                    val dropActions = mutableListOf<Action.Drop>()
+                                    for (node in nodes) {
+                                        val action = Action.Drop(node)
+                                        dropActions.add(action)
+
+                                        processAction(action)
+                                        createdActions.add(action)
                                     }
 
                                     pendingSuccessorActions.values.forEach { it.addAll(dropActions) }
@@ -204,13 +213,13 @@ class ClusterNode(
 
                             ChannelType.JOIN_ACCEPT_READ -> {
                                 val channel = key.channel() as SocketChannel
-                                val action = actionFactory.build(channel)
+                                val joinAction = actionFactory.build(channel)
                                         ?: throw IllegalArgumentException("joining node did not send JOIN action")
 
-                                logger.info(tag, "received join request from ${action.node.addr}")
+                                logger.info(tag, "received join request from ${joinAction.node.addr}")
 
-                                processAction(action)
-                                pendingSuccessorActions.values.forEach { it.add(action) }
+                                processAction(joinAction)
+                                pendingSuccessorActions.values.forEach { it.add(joinAction) }
 
                                 key.interestOps(SelectionKey.OP_WRITE)
                                 key.attach(ChannelType.JOIN_ACCEPT_WRITE)
@@ -253,11 +262,26 @@ class ClusterNode(
                                 if (newActions.isNotEmpty()) {
                                     logger.debug(tag, "found ${newActions.size} actions")
 
-                                    newActions.forEach { processAction(it) }
+                                    newActions
+                                            .filterNot { action ->
+                                                // if remove == true, do NOT keep this action
+                                                createdActions.remove(action)
+                                            }
+                                            .map { action ->
+                                                when (action.type) {
+                                                    Action.Type.LEAVE -> {
+                                                        Action.Drop(action.node)
+                                                                .also {
+                                                                    createdActions.add(it)
+                                                                }
+                                                    }
+                                                    else -> action
+                                                }
+                                            }
+                                            .forEach { processAction(it) }
 
-                                    pendingSuccessorActions.values.forEach { actions ->
-                                        actions.addAll(newActions)
-                                    }
+                                    pendingSuccessorActions.values.forEach { actions -> actions.addAll(newActions) }
+
                                 }
                             }
 
@@ -289,7 +313,10 @@ class ClusterNode(
                                 val channel = key.channel() as SocketChannel
 
                                 logger.debug(tag, "sending join request to ${channel.remoteAddress}")
-                                sendAction(channel, Action.Join(self))
+                                val joinAction = Action.Join(self)
+                                sendAction(channel, joinAction)
+
+                                createdActions.add(joinAction)
 
                                 key.interestOps(SelectionKey.OP_READ)
                                 key.attach(ChannelType.JOIN_CONNECT_READ)
@@ -353,13 +380,13 @@ class ClusterNode(
     private fun processAction(action: Action) {
         val nodes = when (action.type) {
             Action.Type.JOIN -> {
-                logger.debug(tag, "adding ${action.node.addr} to membership list")
-                membershipList.nodes.plus(action.node)
-            }
-
-            Action.Type.LEAVE -> {
-                logger.debug(tag, "removing ${action.node.addr} from membership list")
-                membershipList.nodes.filter { it != action.node }
+                if (membershipList.nodes.contains(action.node)) {
+                    logger.debug(tag, "ignoring duplicate join action for ${action.node}")
+                    membershipList.nodes
+                } else {
+                    logger.debug(tag, "adding ${action.node} to membership list")
+                    membershipList.nodes.plus(action.node)
+                }
             }
 
             Action.Type.DROP -> {
@@ -367,6 +394,7 @@ class ClusterNode(
                 membershipList.nodes.filter { it != action.node }
             }
 
+            Action.Type.LEAVE -> throw IllegalStateException("LEAVE actions should not be handled here!")
             Action.Type.HEARTBEAT -> throw IllegalStateException("HEARTBEAT actions should not be handled here!")
             Action.Type.CONNECT -> throw IllegalStateException("CONNECT actions should not be handled here!")
         }

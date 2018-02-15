@@ -52,10 +52,9 @@ class PredecessorHeartbeatMonitorController(
                         val channel = nodeToChannel[node]
 
                         if (channel != null) {
+                            logger.debug(tag, "alerting watcher that heartbeat has been received...")
                             channel.send(true)
                             continue
-                        } else {
-                            logger.debug(tag, "unable to find watcher channel!")
                         }
 
                         logger.warn(tag, "received heartbeat notification for unknown node: $node. Ignoring!")
@@ -87,11 +86,10 @@ class PredecessorHeartbeatMonitorController(
                                 .build()
 
                         val address = node.addr
-                        val message = Actions.Request.newBuilder()
-                                .setType(Actions.Request.Type.DROP)
+                        val message = Actions.Membership.newBuilder()
+                                .setTimestamp(timestamp)
                                 .setHostName(address.hostString)
                                 .setPort(address.port)
-                                .setTimestamp(timestamp)
                                 .build()
                                 .toByteArray()
 
