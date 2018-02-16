@@ -80,6 +80,9 @@ class ClusterNode(
 
     private val heartbeatByteArray = buildHeartbeat(self).toByteArray()
 
+    private val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+    private val sentSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+
     fun start(address: SocketAddress?) = runBlocking {
         if (address == null) {
             println("Join address: ${localAddr.hostName}")
@@ -117,9 +120,6 @@ class ClusterNode(
                 joinClusterChannel.connect(address)
                 logger.debug(tag, "connecting to join server!")
             }
-
-            val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
-            val createdActions = mutableListOf<Action>()
 
             while (selector.select() >= 0) {
                 val keyIterator = selector.selectedKeys().iterator()
@@ -163,7 +163,6 @@ class ClusterNode(
 
                                     processAction(dropAction)
                                     pendingSuccessorActions.values.forEach { it.add(dropAction) }
-                                    createdActions.add(dropAction)
                                 }
                             }
 
@@ -204,7 +203,6 @@ class ClusterNode(
                                         dropActions.add(action)
 
                                         processAction(action)
-                                        createdActions.add(action)
                                     }
 
                                     pendingSuccessorActions.values.forEach { it.addAll(dropActions) }
@@ -238,14 +236,15 @@ class ClusterNode(
                             ChannelType.SUCCESSOR_ACCEPT_READ -> {
                                 // connect to new successors
                                 val channel = key.channel() as SocketChannel
-                                val action = actionFactory.build(channel)
+                                val connectAction = actionFactory.build(channel)
 
-                                if (action == null) {
+                                if (connectAction == null) {
                                     logger.warn(tag, "successor didn't complete connect")
                                 } else {
-                                    logger.debug(tag, "successor identified as ${action.node.addr}")
-                                    successorChannels[key] = action.node
-                                    pendingSuccessorActions[action.node] = mutableListOf()
+                                    logger.debug(tag, "successor identified as ${connectAction.node.addr}")
+                                    successorChannels[key] = connectAction.node
+                                    pendingSuccessorActions[connectAction.node] = mutableListOf()
+                                    sentSuccessorActions[connectAction.node] = mutableListOf()
 
                                     heartbeatTimerTask?.cancel()
                                     startSendingHeartbeats()
@@ -261,20 +260,24 @@ class ClusterNode(
 
                                 if (newActions.isNotEmpty()) {
                                     logger.debug(tag, "found ${newActions.size} actions")
+                                    val node = predecessorChannels.getValue(key)
 
                                     val usableActions = mutableListOf<Action>()
                                     for (action in newActions) {
                                         val usableAction = if (action.type == Action.Type.LEAVE) {
                                             Action.Drop(action.node)
+                                        } else if (action.type == Action.Type.JOIN && action.node == self) {
+                                            continue
                                         } else {
                                             action
                                         }
 
-                                        // If the usableAction exists in createdActions, remove it and move on to the
+                                        // If the usableAction exists in sentSuccessorActions, remove it and move on to the
                                         // next action. It has completed a full circle around the ring and doesn't need
                                         // to be pushed on to our successors
-                                        if (createdActions.remove(usableAction)) {
-                                            logger.debug(tag, "dropping $usableAction")
+                                        val sentActions = sentSuccessorActions.getValue(node)
+                                        if (usableAction in sentActions) {
+                                            sentActions.remove(usableAction)
                                             continue
                                         }
 
@@ -283,7 +286,6 @@ class ClusterNode(
                                     }
 
                                     pendingSuccessorActions.values.forEach { actions -> actions.addAll(usableActions) }
-
                                 }
                             }
 
@@ -318,10 +320,6 @@ class ClusterNode(
                                 val joinAction = Action.Join(self)
                                 sendAction(channel, joinAction)
 
-                                // The node running this is attempting to join a running cluster. It creates the
-                                // join action so it should be the one to stop sending it around the ring
-                                createdActions.add(joinAction)
-
                                 key.interestOps(SelectionKey.OP_READ)
                                 key.attach(ChannelType.JOIN_CONNECT_READ)
                             }
@@ -345,7 +343,7 @@ class ClusterNode(
                                         ?.takeIf { it.isNotEmpty() }
                                         ?.let { actions ->
                                             try {
-                                                logger.info(tag, "sending ${actions.size} to $node")
+                                                logger.info(tag, "sending ${actions.size} actions to $node")
                                                 sendActions(channel, actions)
                                             } catch (e: IOException) {
                                                 logger.warn(tag, "error writing to success channel for ${node.addr}!")
@@ -495,6 +493,9 @@ class ClusterNode(
                 logger.debug(tag, "closing successor connection to ${node.addr}")
                 successorIterator.remove()
                 key.cancel()
+
+                pendingSuccessorActions.remove(node)
+                sentSuccessorActions.remove(node)
             }
         }
 
