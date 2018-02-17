@@ -3,6 +3,7 @@ package eece513
 import eece513.model.Action
 import eece513.model.MembershipList
 import eece513.model.Node
+import eece513.util.SuccessorSentActions
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.ReceiveChannel
 import kotlinx.coroutines.experimental.runBlocking
@@ -85,7 +86,7 @@ class ClusterNode(
     private val heartbeatByteArray = buildHeartbeat(self).toByteArray()
 
     private val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
-    private val sentSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+    private val sentSuccessorActions = mutableMapOf<Node, SuccessorSentActions>()
 
     fun start(address: SocketAddress?, interval: Long) = runBlocking {
         if (address == null) {
@@ -128,6 +129,7 @@ class ClusterNode(
             while (selector.select() >= 0) {
                 val keyIterator = selector.selectedKeys().iterator()
                 while (keyIterator.hasNext()) {
+
                     val key = keyIterator.next()
                     keyIterator.remove()
 
@@ -248,7 +250,7 @@ class ClusterNode(
                                     logger.debug(tag, "successor identified as ${connectAction.node.addr}")
                                     successorChannels[key] = connectAction.node
                                     pendingSuccessorActions[connectAction.node] = mutableListOf()
-                                    sentSuccessorActions[connectAction.node] = mutableListOf()
+                                    sentSuccessorActions[connectAction.node] = SuccessorSentActions()
 
                                     heartbeatTimerTask?.cancel()
                                     startSendingHeartbeats()
@@ -344,7 +346,7 @@ class ClusterNode(
                                             // If the current action exists in sentSuccessorActions, remove it. It has
                                             // completed a full circle around the ring and doesn't need to be pushed to
                                             // this successor
-                                            if (action in sentActions) {
+                                            if (sentActions.contains(action)) {
                                                 logger.debug(tag, "removing $action as we've already sent it to $node")
                                             } else {
                                                 try {

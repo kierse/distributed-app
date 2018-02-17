@@ -13,3 +13,5 @@ const val HEARTBEAT_INTERVAL = 1000L
 const val HEARTBEAT_TIMEOUT = 1800L
 
 const val LOG_LOCATION = "logs/node.log"
+
+const val SUCCESSOR_SENT_ACTIONS_LIMIT = 100
