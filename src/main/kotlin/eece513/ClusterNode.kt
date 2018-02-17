@@ -27,7 +27,7 @@ fun main(args: Array<String>) {
     val node = ClusterNode(
             predecessorMonitor, messageBuilder, actionFactory, nodeFactory, membershipListFactory, logger
     )
-    
+
     var address: InetSocketAddress? = null
     var interval = 0L
     if (args.isNotEmpty()) {
