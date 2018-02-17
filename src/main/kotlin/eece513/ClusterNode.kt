@@ -236,7 +236,7 @@ class ClusterNode(
                                 logger.info(tag, "received membership list: $membershipList")
 
                                 logger.debug(tag, "closing JOIN connection to ${channel.remoteAddress}")
-                                key.cancel()
+                                channel.close()
                             }
 
                             ChannelType.SUCCESSOR_ACCEPT_READ -> {
@@ -307,7 +307,7 @@ class ClusterNode(
                                 sendMembershipList(channel)
 
                                 logger.debug(tag, "closing JOIN connection to ${channel.remoteAddress}")
-                                key.cancel()
+                                channel.close()
                             }
 
                             ChannelType.JOIN_CONNECT_WRITE -> {
@@ -500,7 +500,7 @@ class ClusterNode(
             if (node in staleSuccessors) {
                 logger.debug(tag, "closing successor connection to ${node.addr}")
                 successorIterator.remove()
-                key.cancel()
+                key.channel().close()
 
                 pendingSuccessorActions.remove(node)
                 sentSuccessorActions.remove(node)
@@ -529,7 +529,7 @@ class ClusterNode(
             if (node in stalePredecessors) {
                 logger.debug(tag, "closing predecessor connection to ${node.addr}")
                 predecessorIterator.remove()
-                key.cancel()
+                key.channel().close()
             }
         }
 
