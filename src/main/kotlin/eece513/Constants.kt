@@ -9,7 +9,9 @@ const val DATAGRAM_PACKET_LIMIT = 128 // in bytes
 
 const val RELATIONSHIP_COUNT = 3
 
-const val HEARTBEAT_INTERVAL = 1500L
-const val HEARTBEAT_TIMEOUT = 1800L
+const val HEARTBEAT_INTERVAL = 1700L
+const val HEARTBEAT_TIMEOUT = 1900L
 
 const val LOG_LOCATION = "logs/node.log"
+
+const val SUCCESSOR_SENT_ACTIONS_LIMIT = 100

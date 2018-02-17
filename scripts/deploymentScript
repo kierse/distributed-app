@@ -68,16 +68,13 @@ do
 	echo ---
     echo "instance: $url"
 
-    ssh -i "$pem" ec2-user@"$url" -o StrictHostKeyChecking=no
-
-
 	echo "attempting to kill running node..."
     ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-app-1.0.jar' < /dev/null
 
     # jar files
     if [ ! -z "$jar" ] || [ ! -z "$all" ]; then
         echo "copying jar..."
-        scp -i "$pem" build/libs/distributed-app-1.0.jar ec2-user@"$url":/home/ec2-user < /dev/null
+        scp -i "$pem" build/libs/distributed-app-1.0.jar ec2-user@"$url":/home/ec2-user
     fi
 
 	echo

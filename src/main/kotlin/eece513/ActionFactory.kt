@@ -43,7 +43,6 @@ class ActionFactory(private val messageReader: MessageReader) {
 
         return when (parsed.type) {
             Actions.Request.Type.JOIN -> Action.Join(node)
-            Actions.Request.Type.REMOVE -> Action.Leave(node)
             Actions.Request.Type.DROP -> Action.Drop(node)
             Actions.Request.Type.CONNECT -> Action.Connect(node)
             Actions.Request.Type.HEARTBEAT -> Action.Heartbeat(node)
