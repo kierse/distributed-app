@@ -26,13 +26,17 @@ fun main(args: Array<String>) {
     val node = ClusterNode(
             predecessorMonitor, messageBuilder, actionFactory, nodeFactory, membershipListFactory, logger
     )
-    val address = if (args.isNotEmpty()) {
-        InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
-    } else {
-        null
+    
+    var address: InetSocketAddress? = null
+    var interval = 0L
+    if (args.isNotEmpty()) {
+        address = InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
+        if (args.size > 1) {
+            interval = args[1].toLong()
+        }
     }
 
-    node.start(address)
+    node.start(address, interval)
 }
 
 class ClusterNode(
@@ -83,7 +87,7 @@ class ClusterNode(
     private val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
     private val sentSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
 
-    fun start(address: SocketAddress?) = runBlocking {
+    fun start(address: SocketAddress?, interval: Long) = runBlocking {
         if (address == null) {
             println("Join address: ${localAddr.hostName}")
         }
