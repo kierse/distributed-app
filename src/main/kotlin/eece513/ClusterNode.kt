@@ -270,6 +270,7 @@ class ClusterNode(
                                         val usableAction = if (action.type == Action.Type.LEAVE) {
                                             Action.Drop(action.node)
                                         } else if (action.type == Action.Type.JOIN && action.node == self) {
+                                            logger.debug(tag, "ignoring self join action")
                                             continue
                                         } else {
                                             action
@@ -335,14 +336,16 @@ class ClusterNode(
                                         ?: throw IllegalStateException("unable to identify channel node!")
                                 val sentActions = sentSuccessorActions.getValue(node)
 
-                                pendingSuccessorActions.put(node, mutableListOf())
-                                        ?.takeIf { it.isNotEmpty() }
+                                val pending = pendingSuccessorActions.remove(node)
+                                pendingSuccessorActions[node] = mutableListOf()
+
+                                pending?.takeIf { it.isNotEmpty() }
                                         ?.forEach { action ->
                                             // If the current action exists in sentSuccessorActions, remove it. It has
                                             // completed a full circle around the ring and doesn't need to be pushed to
                                             // this successor
                                             if (action in sentActions) {
-                                                sentActions.remove(action)
+                                                logger.debug(tag, "removing $action as we've already sent it to $node")
                                             } else {
                                                 try {
                                                     sendAction(channel, action)
