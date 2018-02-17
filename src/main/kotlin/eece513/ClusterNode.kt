@@ -260,7 +260,6 @@ class ClusterNode(
 
                                 if (newActions.isNotEmpty()) {
                                     logger.debug(tag, "found ${newActions.size} actions")
-                                    val node = predecessorChannels.getValue(key)
 
                                     val usableActions = mutableListOf<Action>()
                                     for (action in newActions) {
@@ -270,15 +269,6 @@ class ClusterNode(
                                             continue
                                         } else {
                                             action
-                                        }
-
-                                        // If the usableAction exists in sentSuccessorActions, remove it and move on to the
-                                        // next action. It has completed a full circle around the ring and doesn't need
-                                        // to be pushed on to our successors
-                                        val sentActions = sentSuccessorActions.getValue(node)
-                                        if (usableAction in sentActions) {
-                                            sentActions.remove(usableAction)
-                                            continue
                                         }
 
                                         processAction(usableAction)
@@ -335,18 +325,27 @@ class ClusterNode(
                             }
 
                             ChannelType.SUCCESSOR_ACTION_WRITE -> {
+                                val channel = key.channel() as SocketChannel
+
                                 val node = successorChannels[key]
                                         ?: throw IllegalStateException("unable to identify channel node!")
+                                val sentActions = sentSuccessorActions.getValue(node)
 
-                                val channel = key.channel() as SocketChannel
                                 pendingSuccessorActions.put(node, mutableListOf())
                                         ?.takeIf { it.isNotEmpty() }
-                                        ?.let { actions ->
-                                            try {
-                                                logger.info(tag, "sending ${actions.size} actions to $node")
-                                                sendActions(channel, actions)
-                                            } catch (e: IOException) {
-                                                logger.warn(tag, "error writing to success channel for ${node.addr}!")
+                                        ?.forEach { action ->
+                                            // If the current action exists in sentSuccessorActions, remove it. It has
+                                            // completed a full circle around the ring and doesn't need to be pushed to
+                                            // this successor
+                                            if (action in sentActions) {
+                                                sentActions.remove(action)
+                                            } else {
+                                                try {
+                                                    sendAction(channel, action)
+                                                    sentActions.add(action)
+                                                } catch (e: IOException) {
+                                                    logger.warn(tag, "error writing to success channel for ${node.addr}!")
+                                                }
                                             }
                                         }
                             }
