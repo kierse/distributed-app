@@ -113,12 +113,12 @@ class ClusterNode(
             predecessorMissedHeartbeatChannel.configureBlocking(false)
             predecessorMissedHeartbeatChannel.register(selector, SelectionKey.OP_READ, ChannelType.PREDECESSOR_MISSED_HEARTBEAT_READ)
 
-            if (address == null) {
-                val joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
-                joinRequestServerChannel?.configureBlocking(false)
-                joinRequestServerChannel?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
-                logger.info(tag, "listening for joins on ${joinRequestServerChannel.socket().localSocketAddress}")
-            } else {
+            val joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
+            joinRequestServerChannel?.configureBlocking(false)
+            joinRequestServerChannel?.register(selector, SelectionKey.OP_ACCEPT, ChannelType.JOIN_ACCEPT)
+            logger.info(tag, "listening for joins on ${joinRequestServerChannel.socket().localSocketAddress}")
+
+            if (address != null) {
                 val joinClusterChannel = SocketChannel.open()
                 joinClusterChannel.configureBlocking(false)
                 joinClusterChannel.register(selector, SelectionKey.OP_CONNECT, ChannelType.JOIN_CONNECT)
