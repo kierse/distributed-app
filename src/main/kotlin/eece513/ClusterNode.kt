@@ -30,6 +30,7 @@ fun main(args: Array<String>) {
 
     var address: InetSocketAddress? = null
     var interval = 0L
+
     if (args.isNotEmpty()) {
         address = InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
         if (args.size > 1) {
@@ -93,6 +94,11 @@ class ClusterNode(
             println("Join address: ${localAddr.hostName}")
         }
 
+        var terminateAround: Instant? = null
+        if (interval > 0L) {
+            terminateAround = Instant.now().plusMillis(interval)
+        }
+
         logger.info(tag, "self node: $self")
 
         Selector.open().use { selector ->
@@ -126,8 +132,21 @@ class ClusterNode(
                 logger.debug(tag, "connecting to join server!")
             }
 
+            var shouldILeaveRing = false
             while (selector.select() >= 0) {
                 val keyIterator = selector.selectedKeys().iterator()
+
+                if (!shouldILeaveRing && terminateAround != null && terminateAround < Instant.now()) {
+                    val leaveAction = Action.Leave(self)
+
+                    logger.info(tag, "leaving cluster!")
+                    disconnectFromPredecessors()
+
+                    pendingSuccessorActions.values.forEach { it.add(leaveAction) }
+
+                    shouldILeaveRing = true
+                }
+
                 while (keyIterator.hasNext()) {
 
                     val key = keyIterator.next()
@@ -270,6 +289,7 @@ class ClusterNode(
                                     val usableActions = mutableListOf<Action>()
                                     for (action in newActions) {
                                         val usableAction = if (action.type == Action.Type.LEAVE) {
+                                            logger.info(tag, "received leave from ${action.node}")
                                             Action.Drop(action.node)
                                         } else if (action.type == Action.Type.JOIN && action.node == self) {
                                             logger.debug(tag, "ignoring self join action")
@@ -357,6 +377,11 @@ class ClusterNode(
                                                 }
                                             }
                                         }
+
+                                if (shouldILeaveRing) {
+                                    channel.close()
+                                    successorChannels.remove(key)
+                                }
                             }
 
                             else -> throw IllegalArgumentException("unknown WRITE type: $type")
@@ -369,6 +394,11 @@ class ClusterNode(
                     if (currentMembershipList != membershipList) {
                         rebuildRing(selector, pipe.sink(), heartbeatCoroutineChannel)
                     }
+                }
+
+                if (shouldILeaveRing && successorChannels.isEmpty()) {
+                    logger.info(tag, "disconnected from cluster; terminating")
+                    break
                 }
             }
         }
@@ -408,6 +438,9 @@ class ClusterNode(
             Action.Type.HEARTBEAT -> throw IllegalStateException("HEARTBEAT actions should not be handled here!")
             Action.Type.CONNECT -> throw IllegalStateException("CONNECT actions should not be handled here!")
         }
+
+        // nothing to do!
+        if (nodes == membershipList.nodes) return
 
         membershipList = MembershipList(nodes)
         logger.info(tag, "new membership list: $membershipList")
@@ -474,6 +507,17 @@ class ClusterNode(
             channel.write(buffer)
         }
         logger.debug(tag, "sendMessage: wrote ${buffer.position()} byte(s) to channel")
+    }
+
+    private fun disconnectFromPredecessors() {
+        predecessorMonitor.stop()
+
+        val predecessorIterator = predecessorChannels.iterator()
+        while (predecessorIterator.hasNext()) {
+            val (key, _) = predecessorIterator.next()
+            predecessorIterator.remove()
+            key.channel().close()
+        }
     }
 
     private fun rebuildRing(
