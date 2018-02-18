@@ -12,6 +12,6 @@ const val RELATIONSHIP_COUNT = 3
 const val HEARTBEAT_INTERVAL = 1700L
 const val HEARTBEAT_TIMEOUT = 1900L
 
-const val LOG_LOCATION = "logs/node.log"
+const val LOG_LOCATION = "logs/distributed-app.log"
 
 const val SUCCESSOR_SENT_ACTIONS_LIMIT = 100

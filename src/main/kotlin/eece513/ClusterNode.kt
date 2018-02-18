@@ -16,7 +16,7 @@ import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
-    val logger = TinyLogWrapper()
+    val logger = TinyLogWrapper(LOG_LOCATION)
     val messageReader = MessageReader(logger)
     val messageBuilder = MessageBuilder()
     val actionFactory = ActionFactory(messageReader)
