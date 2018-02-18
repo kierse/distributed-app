@@ -250,9 +250,14 @@ class ClusterNode(
 
                             ChannelType.JOIN_CONNECT_READ -> {
                                 val channel = key.channel() as SocketChannel
-                                membershipList = membershipListFactory.build(channel)
-                                        ?: throw IllegalArgumentException("join node did not send MEMBERSHIP")
-                                logger.info(tag, "received membership list: $membershipList")
+                                val receivedMembershipList = membershipListFactory.build(channel)
+
+                                if (receivedMembershipList != null) {
+                                    logger.info(tag, "received membership list: $membershipList")
+                                    membershipList = receivedMembershipList
+                                } else {
+                                    logger.warn(tag, "join node didn't send membership list!")
+                                }
 
                                 logger.debug(tag, "closing JOIN connection to ${channel.remoteAddress}")
                                 channel.close()
@@ -398,6 +403,11 @@ class ClusterNode(
 
                 if (shouldILeaveRing && successorChannels.isEmpty()) {
                     logger.info(tag, "disconnected from cluster; terminating")
+                    break
+                }
+
+                if (selector.keys().isEmpty()) {
+                    logger.info(tag, "no more open channels, exiting!")
                     break
                 }
             }
