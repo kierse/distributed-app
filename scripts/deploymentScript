@@ -9,6 +9,8 @@ function displayHelp {
     echo
     echo " Actions:"
     echo "          [--jar]              (transfer jar file)"
+    echo "          [--remove-logs]      (delete distributed-app logs)"
+    echo "          [--grep]             (start grep-server)"
     echo "          [--all]              (all of the above)"
     echo "          [--help]             (print this message)"
     echo
@@ -24,8 +26,19 @@ for i in "$@"; do
         *.pem|*.PEM)
             pem=$i
             ;;
+
         --jar)
             jar=true
+            instruction=true
+            ;;
+
+        --remove-logs)
+            logs=true
+            instruction=true
+            ;;
+
+        --grep)
+            grep=true
             instruction=true
             ;;
 
@@ -75,6 +88,22 @@ do
     if [ ! -z "$jar" ] || [ ! -z "$all" ]; then
         echo "copying jar..."
         scp -i "$pem" build/libs/distributed-app-1.0.jar ec2-user@"$url":/home/ec2-user
+    fi
+
+    # distributed-app logs
+    if [ ! -z "$logs" ] || [ ! -z "$all" ]; then
+        echo "deleting logs/distributed-app.log..."
+        ssh -i "$pem" ec2-user@"$url" 'rm -f logs/distributed-app.log' < /dev/null
+    fi
+
+    # grep-server
+    if [ ! -z "$grep" ] || [ ! -z "$all" ]; then
+        echo "attempting to kill running grep-server..."
+        ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-grep-1.0.jar' < /dev/null
+
+        # start grep-server
+        echo "starting grep-server..."
+        ssh -i "$pem" ec2-user@"$url" './startServer' < /dev/null
     fi
 
 	echo
