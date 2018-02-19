@@ -21,7 +21,8 @@ Attention: for Windows users, replace `gradlew` with `gradlew.bat`
 Note: starting a node without the address of an existing cluster will effectively create a second cluster.
 
 ## To grep node logs ##
-7. Follow instructions found [here](https://bitbucket.org/eece513/distributed-grep) and install distributed-grep on each EC2 instance.<br />
+7. Follow instructions found [here](https://bitbucket.org/eece513/distributed-grep) and install distributed-grep on each EC2 instance.
+
 Note: will need to be running code 'Assignment02' tag or later
 
 ## Auxiliary Commands ##
