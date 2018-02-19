@@ -90,9 +90,7 @@ class ClusterNode(
     private val sentSuccessorActions = mutableMapOf<Node, SuccessorSentActions>()
 
     fun start(address: SocketAddress?, interval: Long) = runBlocking {
-        if (address == null) {
-            println("Join address: ${localAddr.hostName}")
-        }
+        println("Join address: ${localAddr.hostName}")
 
         var terminateAround: Instant? = null
         if (interval > 0L) {
