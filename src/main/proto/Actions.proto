@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package eece513;
+package eece513.fs;
 
-option java_package = "eece513";
+option java_package = "eece513.fs";
 option java_outer_classname = "Actions";
 
 message Request {

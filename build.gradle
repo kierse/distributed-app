@@ -75,7 +75,7 @@ protobuf {
 
 jar {
     manifest {
-        attributes "Main-Class": "eece513.ClusterNodeKt"
+        attributes "Main-Class": "eece513.fs.ClusterNodeKt"
     }
 
     from {
