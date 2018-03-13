@@ -1,22 +1,27 @@
 package eece513.fs.mapper
 
 import com.google.protobuf.InvalidProtocolBufferException
+import eece513.common.mapper.ByteMapper
+import eece513.common.mapper.EmptyByteArrayException
+import eece513.common.mapper.ObjectMapper
 import eece513.fs.Actions
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import java.net.InetSocketAddress
 import java.time.Instant
 
-class NodeMapper : ObjectMapper<Node> {
-    override fun toObject(byteArray: ByteArray): Node {
+class NodeMapper : ObjectMapper<Node>, ByteMapper<Node> {
+//    override val type = Node::class.java
+
+    override fun toObjectOrNull(byteArray: ByteArray): Node? {
         if (byteArray.isEmpty()) {
-            throw ObjectMapper.EmptyByteArrayException("byteArray can't be empty!")
+            throw EmptyByteArrayException("byteArray can't be empty!")
         }
 
         val parsed: Actions.Membership?
         try {
             parsed = Actions.Membership.parseFrom(byteArray)
         } catch (e: InvalidProtocolBufferException) {
-            throw ObjectMapper.ParseException(e)
+            return null
         }
 
         val address = InetSocketAddress(parsed.hostName, parsed.port)

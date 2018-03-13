@@ -1,67 +1,49 @@
 package eece513.fs.ring
 
-import eece513.fs.Logger
+import eece513.common.Logger
 import eece513.fs.PredecessorHeartbeatMonitorController
 import eece513.fs.channel.*
-import eece513.fs.model.Action
+import eece513.common.model.Action
+import eece513.common.model.FsCommand
+import eece513.common.model.FsResponse
 import eece513.fs.model.MembershipList
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import eece513.fs.util.SuccessorSentActions
 import kotlinx.coroutines.experimental.channels.SendChannel
-
-interface Ring {
-    val rebuildRing: Boolean
-
-    fun addSuccessor(successor: Node)
-    fun removeSuccessor(successor: Node)
-
-    fun sendJoinRequest(channel: SendActionChannel): Boolean
-    fun readMembershipList(channel: ReadMembershipListChannel): Boolean
-
-    fun leave()
-
-    fun processJoinRequest(channel: ReadActionChannel): Boolean
-    fun sendMembershipList(channel: SendMembershipListChannel): Boolean
-
-    fun sendIdentity(channel: SendActionChannel): Boolean
-    fun readIdentity(channel: ReadActionChannel): Node?
-
-    fun sendActionsToSuccessor(successor: Node, channel: BufferedSendActionChannel)
-    fun processActionsFromPredecessor(predecessor: Node, channel: ReadActionChannel)
-
-    fun processHeartbeat(channel: ReadHeartbeatChannel)
-    fun processMissedHeartbeats(channel: MissedHeartbeatChannel)
-
-    fun dropPredecessor(predecessor: Node)
-
-    fun getPredecessors(): List<Node>
-    fun getSuccessors(): List<Node>
-}
-
-interface MutableRing {
-    val pendingSuccessorActions: MutableMap<Node, MutableList<Action>>
-    val sentSuccessorActions: MutableMap<Node, SuccessorSentActions>
-    var membershipList: MembershipList
-}
+import java.time.Instant
+import java.util.*
 
 class RingImpl /* testing */ constructor(
         private val self: Node,
-        override var membershipList: MembershipList,
+        private val fileSystem: FileSystem,
+        list: MembershipList,
         private val missedHeartbeatChannel: SendChannel<PredecessorHeartbeatMonitorController.Heartbeat>,
         private val logger: Logger
-) : Ring, MutableRing {
+) : Ring {
     private val tag = RingImpl::class.java.simpleName
 
-    override val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
-    override val sentSuccessorActions = mutableMapOf<Node, SuccessorSentActions>()
+    var membershipList: MembershipList = list
+        set(newList) {
+            fileSystem.saveAddressListToDisk(newList.nodes.map { it.addr.hostName })
+            field = newList
+        }
+
+    val pendingSuccessorActions = mutableMapOf<Node, MutableList<Action>>()
+    val sentSuccessorActions = mutableMapOf<Node, SuccessorSentActions>()
+
     override var rebuildRing: Boolean = false
         get() = field.also { field = false }
 
     constructor(
             self: Node,
+            fileSystem: FileSystem,
             missedHeartbeatChannel: SendChannel<PredecessorHeartbeatMonitorController.Heartbeat>,
             logger: Logger
-    ) : this(self, MembershipList(listOf(self)), missedHeartbeatChannel, logger)
+    ): this(self, fileSystem, MembershipList(listOf(self)), missedHeartbeatChannel, logger)
+
+    fun initialize() {
+        fileSystem.initialize()
+    }
 
     // SelectionKey.OP_READ && Type.PREDECESSOR_ACTION_READ
     override fun processActionsFromPredecessor(predecessor: Node, channel: ReadActionChannel) {
@@ -82,13 +64,18 @@ class RingImpl /* testing */ constructor(
 
     private fun filterAction(action: Action): Action? {
         return when {
-            action is Action.Leave -> {
+            action is Action.ClusterAction.Leave -> {
                 logger.info(tag, "received leave from ${action.node}")
-                Action.Drop(action.node)
+                Action.ClusterAction.Drop(action.node)
             }
 
-            action is Action.Join && action.node == self -> {
+            action is Action.ClusterAction.Join && action.node == self -> {
                 logger.debug(tag, "ignoring self join action")
+                null
+            }
+
+            action is Action.FileSystemAction.RemoveFile && action.sender == self -> {
+                logger.debug(tag, "ignoring remove file action")
                 null
             }
 
@@ -122,8 +109,16 @@ class RingImpl /* testing */ constructor(
     }
 
     private fun processAction(action: Action) {
+        when (action) {
+            is Action.ClusterAction -> processClusterAction(action)
+            is Action.FileSystemAction.RemoveFile -> processFileSystemAction(action)
+            else -> throw IllegalArgumentException("Unknown action!")
+        }
+    }
+
+    private fun processClusterAction(action: Action.ClusterAction) {
         val nodes = when (action) {
-            is Action.Join -> {
+            is Action.ClusterAction.Join -> {
                 if (membershipList.nodes.contains(action.node)) {
                     logger.debug(tag, "ignoring duplicate join action for ${action.node}")
                     return
@@ -133,14 +128,14 @@ class RingImpl /* testing */ constructor(
                 membershipList.nodes.plus(action.node)
             }
 
-            is Action.Drop -> {
+            is Action.ClusterAction.Drop -> {
                 logger.debug(tag, "dropping ${action.node.addr} from membership list")
                 membershipList.nodes.filter { it != action.node }
             }
 
-            is Action.Leave -> throw IllegalStateException("LEAVE actions should not be handled here!")
-            is Action.Heartbeat -> throw IllegalStateException("HEARTBEAT actions should not be handled here!")
-            is Action.Connect -> throw IllegalStateException("CONNECT actions should not be handled here!")
+            is Action.ClusterAction.Leave -> throw IllegalStateException("LEAVE actions should not be handled here!")
+            is Action.ClusterAction.Heartbeat -> throw IllegalStateException("HEARTBEAT actions should not be handled here!")
+            is Action.ClusterAction.Connect -> throw IllegalStateException("CONNECT actions should not be handled here!")
         }
 
         if (membershipList.nodes == nodes) return
@@ -149,6 +144,14 @@ class RingImpl /* testing */ constructor(
         logger.info(tag, "new membership list: $membershipList")
 
         rebuildRing = true
+    }
+
+    private fun processFileSystemAction(action: Action.FileSystemAction.RemoveFile) {
+        fileSystem.removeFile(action.remoteName)
+
+        pendingSuccessorActions.values.forEach { list ->
+            list.add(action)
+        }
     }
 
     override fun addSuccessor(successor: Node) {
@@ -162,17 +165,17 @@ class RingImpl /* testing */ constructor(
     }
 
     override fun dropPredecessor(predecessor: Node) {
-        val dropAction = Action.Drop(predecessor)
+        val dropAction = Action.ClusterAction.Drop(predecessor)
 
-        processAction(dropAction)
+        processClusterAction(dropAction)
         pendingSuccessorActions.values.forEach { it.add(dropAction) }
     }
 
-    override fun processJoinRequest(channel: ReadActionChannel): Boolean {
-        val joinAction = channel.read() ?: return false
+    override fun processJoinRequest(channel: ReadClusterActionChannel): Boolean {
+        val joinAction: Action.ClusterAction.Join = channel.readTyped() ?: return false
 
         logger.info(tag, "received join request from ${joinAction.node}")
-        processAction(joinAction)
+        processClusterAction(joinAction)
         pendingSuccessorActions.values.forEach { it.add(joinAction) }
         return true
     }
@@ -180,20 +183,23 @@ class RingImpl /* testing */ constructor(
     // Type.JOIN_ACCEPT_WRITE
     override fun sendMembershipList(channel: SendMembershipListChannel): Boolean = channel.send(membershipList)
 
-    override fun sendJoinRequest(channel: SendActionChannel) = channel.send(Action.Join(self))
+    override fun sendJoinRequest(channel: SendClusterActionChannel) = channel.send(Action.ClusterAction.Join(self))
 
     override fun readMembershipList(channel: ReadMembershipListChannel): Boolean {
-        val newList = channel.read() ?: return false
+        val newList: MembershipList = channel.readTyped() ?: return false
 
         logger.info(tag, "received membership list: $newList")
         membershipList = newList
         rebuildRing = true
+
+        fileSystem.syncFiles(membershipList.nodes.first().addr)
+
         return true
     }
 
-    override fun sendIdentity(channel: SendActionChannel): Boolean = channel.send(Action.Connect(self))
+    override fun sendIdentity(channel: SendClusterActionChannel): Boolean = channel.send(Action.ClusterAction.Connect(self))
 
-    override fun readIdentity(channel: ReadActionChannel): Node? = channel.read()?.node
+    override fun readIdentity(channel: ReadClusterActionChannel): Node? = channel.readTyped<Action.ClusterAction.Connect>()?.node
 
     override fun processHeartbeat(channel: ReadHeartbeatChannel) {
         val predecessor = channel.read() ?: return
@@ -217,7 +223,7 @@ class RingImpl /* testing */ constructor(
     }
 
     override fun leave() {
-        val leaveAction = Action.Leave(self)
+        val leaveAction = Action.ClusterAction.Leave(self)
         pendingSuccessorActions.values.forEach { it.add(leaveAction) }
     }
 
@@ -255,5 +261,87 @@ class RingImpl /* testing */ constructor(
             3 -> successors.subList(0, 2)
             else -> successors
         }
+    }
+
+    override fun getRandomNodes(): List<Node> {
+        if (membershipList.nodes.size < 4) {
+            return membershipList.nodes
+        }
+
+        val random = Random()
+
+        val nodes = mutableSetOf<Node>()
+        while (nodes.size != 3) {
+            val i = random.nextInt(membershipList.nodes.size)
+            nodes.add(membershipList.nodes[i])
+        }
+
+        return nodes.toList()
+    }
+
+    override fun processFileRemove(channel: ReadFsCommandChannel): Boolean {
+        val removeCommand: FsCommand.FsRemove = channel.readTyped() ?: return false
+        logger.info(tag, "Received $removeCommand")
+
+        fileSystem.removeFile(removeCommand.remoteFile)
+
+        val action = Action.FileSystemAction.RemoveFile(removeCommand.remoteFile, self)
+        pendingSuccessorActions.values.forEach { list ->
+            list.add(action)
+        }
+
+        return true
+    }
+
+    override fun sendFileRemoveResponse(channel: SendFsResponseChannel): Boolean {
+        return channel.send(FsResponse.RemoveResponse())
+    }
+
+    override fun processFileGet(channel: ReadFsCommandChannel): FsResponse? {
+        val getCommand: FsCommand.FsGet = channel.readTyped() ?: return null
+        logger.info(tag, "Received $getCommand")
+
+        val file = fileSystem.getLatestVersion(getCommand.remoteFile)
+        if (file == null) {
+            logger.warn(tag, "Unable to find ${getCommand.remoteFile}")
+            return FsResponse.UnknownFile()
+        }
+
+        logger.info(tag, "Latest version: ${file.name}")
+        return FsResponse.GetResponse(file.absolutePath)
+    }
+
+    override fun sendFileGetResponse(channel: FsResponseStateChannel): Boolean {
+        return channel.sendChannel.send(channel.response)
+    }
+
+    override fun processFilePut(channel: ReadFsCommandChannel): FsResponse? {
+        val putCommand: FsCommand.FsPut = channel.readTyped() ?: return null
+        logger.info(tag, "Received $putCommand")
+
+        val now = Instant.now()
+        val file = fileSystem.buildEncodedFileName(putCommand.remoteFile, now)
+
+        val response: FsResponse = if (fileSystem.clientShouldPromptUser(putCommand.remoteFile, now)) {
+            FsResponse.PutAckWithPrompt(file.absolutePath)
+        } else {
+            FsResponse.PutAck(file.absolutePath)
+        }
+
+        fileSystem.registerPutRequest(putCommand.remoteFile, now)
+
+        return response
+    }
+
+    override fun processFilePutConfirm(channel: ReadFsCommandChannel): Boolean {
+        val confirmCommand: FsCommand.PutConfirm = channel.readTyped() ?: return false
+
+        fileSystem.confirmPut(confirmCommand.pathToFile)
+
+        return true
+    }
+
+    override fun sendFilePutResponse(channel: FsResponseStateChannel): Boolean {
+        return channel.sendChannel.send(channel.response)
     }
 }

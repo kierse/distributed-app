@@ -1,13 +1,17 @@
 package eece513.fs
 
+import eece513.common.CONNECTION_PORT
+import eece513.common.Logger
+import eece513.common.TinyLogWrapper
+import eece513.common.mapper.ConnectionPurposeMapper
 import eece513.fs.channel.*
-import eece513.fs.mapper.ActionMapper
-import eece513.fs.mapper.MembershipListMapper
-import eece513.fs.mapper.NodeMapper
+import eece513.fs.mapper.*
 import eece513.fs.message.ReadableMessageFactory
 import eece513.fs.message.SendableMessageFactory
-import eece513.fs.model.Action
-import eece513.fs.model.Node
+import eece513.common.model.Action
+import eece513.common.model.ConnectionPurpose
+import eece513.common.model.Node
+import eece513.fs.ring.FileSystem
 import eece513.fs.ring.Ring
 import eece513.fs.ring.RingImpl
 import kotlinx.coroutines.experimental.channels.Channel
@@ -19,26 +23,57 @@ import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
-    val logger = TinyLogWrapper(LOG_LOCATION)
+//    val logger = TinyLogWrapper(LOG_LOCATION)
+    val logger = TinyLogWrapper()
 
     val localAddr = InetAddress.getLocalHost()
 //    val localAddr = InetAddress.getByName("127.0.0.1")
     val socketAddr: InetSocketAddress = ServerSocket(0).use { InetSocketAddress(localAddr, it.localPort) }
     val self = Node(socketAddr, Instant.now())
 
+    val fileSystem = FileSystem(logger)
+
     val heartbeatCoroutineChannel = Channel<PredecessorHeartbeatMonitorController.Heartbeat>(3)
-    val ring: Ring = RingImpl(self, heartbeatCoroutineChannel, logger)
+    val ring = RingImpl(self, fileSystem, heartbeatCoroutineChannel, logger)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(heartbeatCoroutineChannel, SendableMessageFactory(), logger)
 
+    ring.initialize()
+
+    val clusterActionMapper = ClusterActionMapper()
+    val connectionPurposeMapper = ConnectionPurposeMapper()
+    val membershipListMapper = MembershipListMapper()
+    val nodeMapper = NodeMapper()
+    val fileSystemMapper = FileSystemMapper()
+    val actionByteMapper = ActionMapper(clusterActionMapper, fileSystemMapper)
+    val fsCommandMapper = FsCommandObjectMapper()
+    val fsResponseMapper = FsResponseByteMapper()
+
+    val sendableMessageFactory = SendableMessageFactory()
+    val readableMessageFactory = ReadableMessageFactory()
+
     val node = ClusterNode(
-            localAddr, socketAddr, self, ring, predecessorMonitor, logger
+            localAddr,
+            socketAddr,
+            self,
+            ring,
+            predecessorMonitor,
+            clusterActionMapper,
+            membershipListMapper,
+            nodeMapper,
+            connectionPurposeMapper,
+            fsCommandMapper,
+            fsResponseMapper,
+            actionByteMapper,
+            sendableMessageFactory,
+            readableMessageFactory,
+            logger
     )
 
     var address: InetSocketAddress? = null
     var interval = 0L
 
     if (args.isNotEmpty()) {
-        address = InetSocketAddress(InetAddress.getByName(args.first()), JOIN_PORT)
+        address = InetSocketAddress(InetAddress.getByName(args.first()), CONNECTION_PORT)
         if (args.size > 1) {
             interval = args[1].toLong()
         }
@@ -53,6 +88,15 @@ class ClusterNode(
         private val self: Node,
         private val ring: Ring,
         private val predecessorMonitor: PredecessorHeartbeatMonitorController,
+        private val clusterActionMapper: ClusterActionMapper,
+        private val membershipListMapper: MembershipListMapper,
+        private val nodeMapper: NodeMapper,
+        private val connectionPurposeMapper: ConnectionPurposeMapper,
+        private val fsCommandObjectMapper: FsCommandObjectMapper,
+        private val fsResponseMapper: FsResponseByteMapper,
+        private val actionMapper: ActionMapper,
+        private val sendableMessageFactory: SendableMessageFactory,
+        private val readableMessageFactory: ReadableMessageFactory,
         private val logger: Logger
 ) {
 
@@ -64,7 +108,7 @@ class ClusterNode(
     private val successorChannels = mutableMapOf<SelectionKey, Node>()
     private val predecessorChannels = mutableMapOf<SelectionKey, Node>()
 
-    private val heartbeatByteArray = ActionMapper().toByteArray(Action.Heartbeat(self))
+    private val heartbeatByteArray = clusterActionMapper.toByteArray(Action.ClusterAction.Heartbeat(self))
 
     fun start(address: SocketAddress?, interval: Long) {
         println("Join address: ${localAddr.hostName}")
@@ -76,13 +120,6 @@ class ClusterNode(
 
         logger.info(tag, "self node: $self")
 
-        val sendableMessageFactory = SendableMessageFactory()
-        val readableMessageFactory = ReadableMessageFactory()
-
-        val actionMapper = ActionMapper()
-        val membershipListMapper = MembershipListMapper()
-        val nodeMapper = NodeMapper()
-
         Selector.open().use { selector ->
             logger.info(tag, "listening for TCP connections on $socketAddr")
             val successorServerChannel = ServerSocketChannel.open().bind(socketAddr)
@@ -92,7 +129,7 @@ class ClusterNode(
             logger.info(tag, "listening for UDP connections on $socketAddr")
             val predecessorHeartbeatChannel = DatagramChannel.open().bind(socketAddr)
             val heartbeatChannel = ReadHeartbeatChannel(
-                    predecessorHeartbeatChannel, actionMapper, logger
+                    predecessorHeartbeatChannel, clusterActionMapper, logger
             )
 
             predecessorHeartbeatChannel.configureBlocking(false)
@@ -107,9 +144,9 @@ class ClusterNode(
             predecessorMissedHeartbeatChannel.configureBlocking(false)
             predecessorMissedHeartbeatChannel.register(selector, SelectionKey.OP_READ, missedHeartbeatChannel)
 
-            val joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, JOIN_PORT))
+            val joinRequestServerChannel = ServerSocketChannel.open().bind(InetSocketAddress(localAddr, CONNECTION_PORT))
             joinRequestServerChannel?.configureBlocking(false)
-            joinRequestServerChannel?.register(selector, SelectionKey.OP_ACCEPT, RingChannelImpl(RingChannel.Type.JOIN_ACCEPT))
+            joinRequestServerChannel?.register(selector, SelectionKey.OP_ACCEPT, RingChannelImpl(RingChannel.Type.NODE_ACCEPT))
             logger.info(tag, "listening for joins on ${joinRequestServerChannel.socket().localSocketAddress}")
 
             if (address != null) {
@@ -146,8 +183,8 @@ class ClusterNode(
                             RingChannel.Type.JOIN_CONNECT -> {
                                 val channel = key.channel() as SocketChannel
                                 if (channel.finishConnect()) {
-                                    val sendChannel = SendActionChannel(
-                                            RingChannel.Type.JOIN_CONNECT_WRITE, channel, sendableMessageFactory, actionMapper
+                                    val sendChannel = SendConnectionPurposeChannel(
+                                            RingChannel.Type.JOIN_CONNECT_PURPOSE_WRITE, channel, sendableMessageFactory, connectionPurposeMapper
                                     )
 
                                     key.interestOps(SelectionKey.OP_WRITE)
@@ -163,8 +200,8 @@ class ClusterNode(
 
                                 try {
                                     if (channel.finishConnect()) {
-                                        val sendChannel = SendActionChannel(
-                                                RingChannel.Type.PREDECESSOR_CONNECT_WRITE, channel, sendableMessageFactory, actionMapper
+                                        val sendChannel = SendClusterActionChannel(
+                                                RingChannel.Type.PREDECESSOR_CONNECT_WRITE, channel, sendableMessageFactory, clusterActionMapper
                                         )
 
                                         key.interestOps(SelectionKey.OP_WRITE)
@@ -182,25 +219,25 @@ class ClusterNode(
                         }
 
                         key.isAcceptable -> when (ringChannel.type) {
-                            RingChannel.Type.JOIN_ACCEPT -> {
+                            RingChannel.Type.NODE_ACCEPT -> {
                                 val serverChannel = key.channel() as ServerSocketChannel
                                 val channel = serverChannel.accept()
 
-                                val readActionChannel = ReadActionChannel(
-                                        RingChannel.Type.JOIN_ACCEPT_READ, channel, readableMessageFactory, actionMapper, logger
+                                val readConnectionPurposeChannel = ReadConnectionPurposeChannel(
+                                        RingChannel.Type.NODE_ACCEPT_READ, channel, readableMessageFactory, connectionPurposeMapper, logger
                                 )
 
                                 channel.configureBlocking(false)
-                                channel.register(selector, SelectionKey.OP_READ, readActionChannel)
-                                logger.debug(tag, "accepting connection from new node at ${channel.remoteAddress}")
+                                channel.register(selector, SelectionKey.OP_READ, readConnectionPurposeChannel)
+                                logger.debug(tag, "new incoming connection from ${channel.remoteAddress}")
                             }
 
                             RingChannel.Type.SUCCESSOR_ACCEPT -> {
                                 val serverChannel = key.channel() as ServerSocketChannel
                                 val channel = serverChannel.accept()
 
-                                val readChannel = ReadActionChannel(
-                                        RingChannel.Type.SUCCESSOR_ACCEPT_READ, channel, readableMessageFactory, actionMapper, logger
+                                val readChannel = ReadClusterActionChannel(
+                                        RingChannel.Type.SUCCESSOR_ACCEPT_READ, channel, readableMessageFactory, clusterActionMapper, logger
                                 )
 
                                 channel.configureBlocking(false)
@@ -216,8 +253,109 @@ class ClusterNode(
                                 ring.processMissedHeartbeats(key.attachment() as MissedHeartbeatChannel)
                             }
 
+                            RingChannel.Type.NODE_ACCEPT_READ -> {
+                                val socketChannel = key.attachment() as ReadConnectionPurposeChannel
+                                val purpose = socketChannel.read()
+
+                                val channel = key.channel() as SocketChannel
+                                when (purpose) {
+                                    is ConnectionPurpose.NodeJoin -> {
+                                        val readActionChannel = ReadClusterActionChannel(
+                                                RingChannel.Type.JOIN_ACCEPT_READ, channel, readableMessageFactory, clusterActionMapper, logger
+                                        )
+
+                                        key.interestOps(SelectionKey.OP_READ)
+                                        key.attach(readActionChannel)
+                                        logger.debug(tag, "accepting connection from new node at ${channel.remoteAddress}")
+                                    }
+
+                                    is ConnectionPurpose.ClientRemove -> {
+                                        logger.debug(tag, "identified ClientRemove purpose")
+                                        val readCommandChannel = ReadFsCommandChannel(
+                                                RingChannel.Type.CLIENT_REMOVE, channel, readableMessageFactory, fsCommandObjectMapper, logger
+                                        )
+
+                                        key.interestOps(SelectionKey.OP_READ)
+                                        key.attach(readCommandChannel)
+                                    }
+
+                                    is ConnectionPurpose.ClientGet -> {
+                                        logger.debug(tag, "identified ClientGet purpose")
+                                        val readCommandChannel = ReadFsCommandChannel(
+                                                RingChannel.Type.CLIENT_GET, channel, readableMessageFactory, fsCommandObjectMapper, logger
+                                        )
+
+                                        key.interestOps(SelectionKey.OP_READ)
+                                        key.attach(readCommandChannel)
+                                    }
+
+                                    is ConnectionPurpose.ClientPut -> {
+                                        logger.debug(tag, "identified ClientPut purpose")
+                                        val readCommandChannel = ReadFsCommandChannel(
+                                                RingChannel.Type.CLIENT_PUT, channel, readableMessageFactory, fsCommandObjectMapper, logger
+                                        )
+
+                                        key.interestOps(SelectionKey.OP_READ)
+                                        key.attach(readCommandChannel)
+                                    }
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_REMOVE -> {
+                                if (ring.processFileRemove(key.attachment() as ReadFsCommandChannel)) {
+                                    val channel = key.channel() as SocketChannel
+                                    val sendChannel = SendFsResponseChannel(
+                                            RingChannel.Type.CLIENT_REMOVE_WRITE, channel, sendableMessageFactory, fsResponseMapper
+                                    )
+
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(sendChannel)
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_GET -> {
+                                val response = ring.processFileGet(key.attachment() as ReadFsCommandChannel)
+                                if (response != null) {
+                                    val channel = key.channel() as SocketChannel
+                                    val sendChannel = SendFsResponseChannel(
+                                            RingChannel.Type.CLIENT_GET_WRITE, channel, sendableMessageFactory, fsResponseMapper
+                                    )
+
+                                    val stateChannel = FsResponseStateChannel(
+                                            RingChannel.Type.CLIENT_GET_WRITE, response, sendChannel
+                                    )
+
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(stateChannel)
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_PUT -> {
+                                val response = ring.processFilePut(key.attachment() as ReadFsCommandChannel)
+                                if (response != null) {
+                                    val channel = key.channel() as SocketChannel
+                                    val sendChannel = SendFsResponseChannel(
+                                            RingChannel.Type.CLIENT_PUT_WRITE, channel, sendableMessageFactory, fsResponseMapper
+                                    )
+
+                                    val stateChannel = FsResponseStateChannel(
+                                            RingChannel.Type.CLIENT_PUT_WRITE, response, sendChannel
+                                    )
+
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(stateChannel)
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_PUT_CONFIRM -> {
+                                if (ring.processFilePutConfirm(key.attachment() as ReadFsCommandChannel)) {
+                                    val channel = key.channel() as SocketChannel
+                                    channel.close()
+                                }
+                            }
+
                             RingChannel.Type.JOIN_ACCEPT_READ -> {
-                                if (ring.processJoinRequest(key.attachment() as ReadActionChannel)) {
+                                if (ring.processJoinRequest(key.attachment() as ReadClusterActionChannel)) {
                                     val channel = key.channel() as SocketChannel
                                     val sendChannel = SendMembershipListChannel(
                                             RingChannel.Type.JOIN_ACCEPT_WRITE, channel, sendableMessageFactory, membershipListMapper
@@ -237,7 +375,7 @@ class ClusterNode(
                             }
 
                             RingChannel.Type.SUCCESSOR_ACCEPT_READ -> {
-                                val successor = ring.readIdentity(key.attachment() as ReadActionChannel)
+                                val successor = ring.readIdentity(key.attachment() as ReadClusterActionChannel)
                                 if (successor != null) {
                                     logger.debug(tag, "successor identified as $successor")
                                     successorChannels[key] = successor
@@ -277,8 +415,21 @@ class ClusterNode(
                                 }
                             }
 
-                            RingChannel.Type.JOIN_CONNECT_WRITE -> {
-                                if (ring.sendJoinRequest(key.attachment() as SendActionChannel)) {
+                            RingChannel.Type.JOIN_CONNECT_PURPOSE_WRITE -> {
+                                val sendPurposeChannel = key.attachment() as SendConnectionPurposeChannel
+                                if (sendPurposeChannel.send(ConnectionPurpose.NodeJoin())) {
+                                    val channel = key.channel() as SocketChannel
+                                    val sendChannel = SendClusterActionChannel(
+                                            RingChannel.Type.JOIN_CONNECT_ACTION_WRITE, channel, sendableMessageFactory, clusterActionMapper
+                                    )
+
+                                    key.interestOps(SelectionKey.OP_WRITE)
+                                    key.attach(sendChannel)
+                                }
+                            }
+
+                            RingChannel.Type.JOIN_CONNECT_ACTION_WRITE -> {
+                                if (ring.sendJoinRequest(key.attachment() as SendClusterActionChannel)) {
                                     val channel = key.channel() as SocketChannel
                                     val readChannel = ReadMembershipListChannel(
                                             RingChannel.Type.JOIN_CONNECT_READ, channel, readableMessageFactory, membershipListMapper, logger
@@ -289,9 +440,38 @@ class ClusterNode(
                                 }
                             }
 
+                            RingChannel.Type.CLIENT_REMOVE_WRITE -> {
+                                if (ring.sendFileRemoveResponse(key.attachment() as SendFsResponseChannel)) {
+                                    val channel = key.channel() as SocketChannel
+                                    channel.close()
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_GET_WRITE -> {
+                                if (ring.sendFileGetResponse(key.attachment() as FsResponseStateChannel)) {
+                                    val channel = key.channel() as SocketChannel
+                                    channel.close()
+                                }
+                            }
+
+                            RingChannel.Type.CLIENT_PUT_WRITE -> {
+                                val sendChannel = key.attachment() as FsResponseStateChannel
+                                if (ring.sendFilePutResponse(sendChannel)) {
+                                    logger.info(tag, "send ${sendChannel.response}")
+                                    val channel = key.channel() as SocketChannel
+                                    val readCommandChannel = ReadFsCommandChannel(
+                                            RingChannel.Type.CLIENT_PUT_CONFIRM, channel, readableMessageFactory, fsCommandObjectMapper, logger
+                                    )
+
+                                    key.interestOps(SelectionKey.OP_READ)
+                                    key.attach(readCommandChannel)
+                                }
+                            }
+
+
                             RingChannel.Type.PREDECESSOR_CONNECT_WRITE -> {
                                 val channel = key.channel() as SocketChannel
-                                if (ring.sendIdentity(key.attachment() as SendActionChannel)) {
+                                if (ring.sendIdentity(key.attachment() as SendClusterActionChannel)) {
                                     val readChannel = ReadActionChannel(
                                             RingChannel.Type.PREDECESSOR_ACTION_READ, channel, readableMessageFactory, actionMapper, logger
                                     )

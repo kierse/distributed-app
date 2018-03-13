@@ -1,10 +1,11 @@
 package eece513.fs
 
+import eece513.common.TinyLogWrapper
 import eece513.fs.channel.MissedHeartbeatChannel
 import eece513.fs.mapper.NodeMapper
 import eece513.fs.message.ReadableMessageFactory
 import eece513.fs.message.SendableMessageFactory
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.runBlocking

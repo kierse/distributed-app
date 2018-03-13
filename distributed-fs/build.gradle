@@ -1,4 +1,24 @@
+apply plugin: 'com.google.protobuf'
+
+sourceSets {
+    main{
+        proto{
+            srcDirs += 'distributed-fs/src/main/proto'
+        }
+    }
+}
+
+protobuf {
+    generatedFilesBaseDir = "$projectDir/src"
+
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.5.1"
+    }
+}
+
 dependencies {
+    compile project(":common")
+
     // kotlin
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.2'
@@ -27,18 +47,4 @@ jar {
     from {
         configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
     }
-}
-
-task configBootstrapAws {
-    doLast {
-        if (!project.hasProperty("pem")) {
-            throw new InvalidUserDataException("must provide path to PEM file!")
-        }
-
-        bootstrapAws.commandLine "./scripts/deploymentScript", project.pem, "--all"
-    }
-}
-
-task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
-    dependsOn = ['jar', 'configBootstrapAws']
 }

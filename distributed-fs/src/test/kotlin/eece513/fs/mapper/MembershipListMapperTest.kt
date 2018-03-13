@@ -1,8 +1,10 @@
 package eece513.fs.mapper
 
+import eece513.common.mapper.EmptyByteArrayException
+import eece513.common.mapper.ParseException
 import eece513.fs.Actions
 import eece513.fs.model.MembershipList
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -22,7 +24,7 @@ class MembershipListMapperTest {
         assertArrayEquals(expected, result)
     }
 
-    @Test(expected = ObjectMapper.EmptyByteArrayException::class)
+    @Test(expected = EmptyByteArrayException::class)
     fun toMembershipList__empty_byte_list() {
         assertNull(MembershipListMapper().toObject(byteArrayOf()))
     }
@@ -37,7 +39,7 @@ class MembershipListMapperTest {
         assertEquals(expected, result)
     }
 
-    @Test(expected = ObjectMapper.ParseException::class)
+    @Test(expected = ParseException::class)
     fun toMembershipList__parse_error() {
         val expected = MembershipList(listOf(node))
         val bytes = buildByteArray(expected)

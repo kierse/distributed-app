@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package eece513.common;
+
+option java_package = "eece513.common";
+
+message Command {
+    enum Type {
+        _IGNORE = 0;
+        GET = 1;
+        PUT = 2;
+        REMOVE = 3;
+        CONFIRM = 4;
+    }
+
+    Type type = 1;
+    string body = 2;
+}
+
+message Response {
+    enum Type {
+        _IGNORE = 0;
+        GET = 1;
+        PUT_ACK = 2;
+        PUT_ACK_PROMPT = 3;
+        REMOVE = 4;
+        UNKNOWN_FILE = 5;
+    }
+
+    Type type = 1;
+    string body = 2;
+}

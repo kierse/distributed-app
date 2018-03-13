@@ -1,4 +1,4 @@
-package eece513.client
+package eece513.common.util
 
 import java.io.*
 import java.net.InetAddress

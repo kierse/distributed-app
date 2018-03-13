@@ -74,8 +74,9 @@ build/
 logs/
 servers.txt
 
-src/main/java
+*/src/main/java
 csshx
 
 *.pem
-servers.txt
+
+/*/out/

@@ -1,7 +1,7 @@
 package eece513.fs.util
 
 import eece513.fs.SUCCESSOR_SENT_ACTIONS_LIMIT
-import eece513.fs.model.Action
+import eece513.common.model.Action
 import java.util.*
 
 class SuccessorSentActions internal constructor(

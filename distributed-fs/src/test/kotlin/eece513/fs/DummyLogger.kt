@@ -1,6 +1,6 @@
 package eece513.fs
 
-import eece513.fs.Logger
+import eece513.common.Logger
 
 class DummyLogger : Logger {
     override fun debug(tag: String, msg: String, vararg args: Any) {}

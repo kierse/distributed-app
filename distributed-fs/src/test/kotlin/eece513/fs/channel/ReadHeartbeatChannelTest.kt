@@ -1,10 +1,10 @@
 package eece513.fs.channel
 
 import com.nhaarman.mockito_kotlin.mock
+import eece513.common.model.Action
 import eece513.fs.DummyLogger
-import eece513.fs.mapper.ActionMapper
-import eece513.fs.model.Action
-import eece513.fs.model.Node
+import eece513.fs.mapper.ClusterActionMapper
+import eece513.common.model.Node
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -17,19 +17,19 @@ import java.time.Instant
 class ReadHeartbeatChannelTest {
     private val node = Node(InetSocketAddress("127.0.0.1", 6969), Instant.now())
     private val address = InetSocketAddress("127.0.0.1", 6970)
-    private val mapper = ActionMapper()
+    private val mapper = ClusterActionMapper()
 
     @Test
     fun getType() {
         assertEquals(
                 RingChannel.Type.PREDECESSOR_HEARTBEAT_READ,
-                ReadHeartbeatChannel(mock(), ActionMapper(), DummyLogger()).type
+                ReadHeartbeatChannel(mock(), mapper, DummyLogger()).type
         )
     }
 
     @Test
     fun read() {
-        val heartbeat = Action.Heartbeat(node)
+        val heartbeat = Action.ClusterAction.Heartbeat(node)
         val message = mapper.toByteArray(heartbeat)
 
         DatagramChannel.open()
@@ -47,7 +47,7 @@ class ReadHeartbeatChannelTest {
 
     @Test
     fun read__invalid_action_type() {
-        val heartbeat = Action.Join(node)
+        val heartbeat = Action.ClusterAction.Join(node)
         val message = buildMessage(mapper.toByteArray(heartbeat))
 
         DatagramChannel.open()
@@ -65,7 +65,7 @@ class ReadHeartbeatChannelTest {
 
     @Test
     fun read__parse_error() {
-        val byteArray = mapper.toByteArray(Action.Heartbeat(node))
+        val byteArray = mapper.toByteArray(Action.ClusterAction.Heartbeat(node))
 
         // shuffle a few bytes so the message is broken
         var temp = byteArray[2]

@@ -1,6 +1,6 @@
 package eece513.fs.channel
 
-import eece513.fs.mapper.ObjectMapper
+import eece513.common.mapper.ByteMapper
 import eece513.fs.message.SendableMessageFactory
 import java.nio.channels.WritableByteChannel
 
@@ -8,7 +8,7 @@ open class SendObjectChannel<in T>(
         override val type: RingChannel.Type,
         private val channel: WritableByteChannel,
         private val messageFactory: SendableMessageFactory,
-        private val objectMapper: ObjectMapper<T>
+        private val objectMapper: ByteMapper<T>
 ) : RingChannel {
     private var inProgressSendableMessage: SendableMessageFactory.SendableMessage? = null
 

@@ -1,4 +1,30 @@
+configurations {
+    distributedTestCompile.extendsFrom testCompile
+    distributedTestRuntime.extendsFrom testRuntime
+}
+
+sourceSets {
+    test {
+        kotlin {
+            srcDirs += "src/test/unit/kotlin"
+        }
+    }
+
+    // This may be helpful:
+    // https://stackoverflow.com/questions/42064377/mark-gradle-source-folder-as-test-source-in-intellij
+    distributedTest {
+        kotlin {
+            srcDirs += "src/test/distributed/kotlin"
+        }
+
+        compileClasspath += main.output + test.output
+        runtimeClasspath += main.output + test.output
+    }
+}
+
 dependencies {
+    compile project(":common")
+
     // kotlin
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
 
@@ -32,18 +58,4 @@ jar {
 task distributedTest(type: Test, description: 'Runs the distributed tests.', group: 'Verification') {
     setTestClassesDirs sourceSets.distributedTest.output.classesDirs
     classpath = sourceSets.distributedTest.runtimeClasspath
-}
-
-task configBootstrapAws {
-    doLast {
-        if (!project.hasProperty("pem")) {
-            throw new InvalidUserDataException("must provide path to PEM file!")
-        }
-
-        bootstrapAws.commandLine "./distributed-ls/scripts/deploymentScript", project.pem, "--all"
-    }
-}
-
-task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
-    dependsOn = ['configBootstrapAws']
 }

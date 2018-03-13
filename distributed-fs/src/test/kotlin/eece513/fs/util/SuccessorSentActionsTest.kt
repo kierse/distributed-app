@@ -1,7 +1,7 @@
 package eece513.fs.util
 
-import eece513.fs.model.Action
-import eece513.fs.model.Node
+import eece513.common.model.Action
+import eece513.common.model.Node
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -18,9 +18,9 @@ class SuccessorSentActionsTest {
         val ssa = SuccessorSentActions(list, 2)
 
         // add three actions
-        ssa.add(Action.Join(node))
-        ssa.add(Action.Join(node))
-        ssa.add(Action.Join(node))
+        ssa.add(Action.ClusterAction.Join(node))
+        ssa.add(Action.ClusterAction.Join(node))
+        ssa.add(Action.ClusterAction.Join(node))
 
         assertTrue(list.size == 2)
     }
@@ -30,8 +30,8 @@ class SuccessorSentActionsTest {
         val node = Node(InetSocketAddress("127.0.0.1", 6969), Instant.now())
         val ssa = SuccessorSentActions(2)
 
-        assertFalse(ssa.contains(Action.Join(node)))
-        ssa.add(Action.Join(node))
-        assertTrue(ssa.contains(Action.Join(node)))
+        assertFalse(ssa.contains(Action.ClusterAction.Join(node)))
+        ssa.add(Action.ClusterAction.Join(node))
+        assertTrue(ssa.contains(Action.ClusterAction.Join(node)))
     }
 }

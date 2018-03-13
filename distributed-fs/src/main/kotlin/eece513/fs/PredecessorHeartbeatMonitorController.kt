@@ -1,8 +1,8 @@
 package eece513.fs
 
-import eece513.fs.Actions
+import eece513.common.Logger
 import eece513.fs.message.SendableMessageFactory
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.*
 import java.nio.channels.WritableByteChannel

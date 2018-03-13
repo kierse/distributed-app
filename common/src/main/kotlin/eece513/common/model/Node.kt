@@ -1,4 +1,4 @@
-package eece513.fs.model
+package eece513.common.model
 
 import java.net.InetSocketAddress
 import java.time.Instant

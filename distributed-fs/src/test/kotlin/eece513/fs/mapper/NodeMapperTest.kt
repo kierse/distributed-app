@@ -1,7 +1,9 @@
 package eece513.fs.mapper
 
+import eece513.common.mapper.EmptyByteArrayException
+import eece513.common.mapper.ParseException
 import eece513.fs.Actions
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -11,7 +13,7 @@ import java.time.Instant
 class NodeMapperTest {
     private val node = Node(InetSocketAddress("127.0.0.1", 6969), Instant.now())
 
-    @Test(expected = ObjectMapper.EmptyByteArrayException::class)
+    @Test(expected = EmptyByteArrayException::class)
     fun toNode__empty_byte_array() {
         assertNull(NodeMapper().toObject(byteArrayOf()))
     }
@@ -24,7 +26,7 @@ class NodeMapperTest {
         assertEquals(node, result)
     }
 
-    @Test(expected = ObjectMapper.ParseException::class)
+    @Test(expected = ParseException::class)
     fun toNode__parse_error() {
         val mapper = NodeMapper()
         val bytes = mapper.toByteArray(node)

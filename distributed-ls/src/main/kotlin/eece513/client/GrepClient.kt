@@ -1,10 +1,9 @@
 package eece513.client
 
 import eece513.*
-import eece513.server.GrepServer
+import eece513.common.SERVERS_FILE_PATH
+import eece513.common.util.FileIO
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 
 class GrepClient(
@@ -47,7 +46,7 @@ class GrepClient(
             val logger = TinyLogWrapper(CLIENT_LOG_LOCATION)
             val helpGenerator = GrepHelpGenerator(GREP_CMD, logger)
 
-            val servers = FileIO().ReadLinesAsInetAddress(System.getProperty("user.dir") + "/servers.txt").map { address ->
+            val servers = FileIO().ReadLinesAsInetAddress(SERVERS_FILE_PATH).map { address ->
                 ServerImpl(address, SERVER_PORT, address.hostAddress, logger)
             }
 

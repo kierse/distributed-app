@@ -1,4 +1,4 @@
-package eece513.fs
+package eece513.common
 
 import org.pmw.tinylog.Configurator
 import org.pmw.tinylog.Level

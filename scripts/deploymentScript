@@ -1,0 +1,168 @@
+#/bin/sh
+
+function displayHelp {
+    if [ ! -z "$1" ]; then
+        echo $1
+    fi
+
+    echo "usage: ./deploymentScript <path to pem file> <action>"
+    echo
+    echo " Actions:"
+    echo "          [--fs-jar]           (transfer distributed-fs jar file)"
+    echo "          [--fs-client-jar]    (transfer fs-client jar file)"
+    echo "          [--ls-jar]           (transfer distributed-ls jar file)"
+    echo "          [--remove-logs]      (delete all logs)"
+    echo "          [--start-ls]         (start ls-server)"
+    echo "          [--all]              (all of the above)"
+    echo "          [--ssh-keys]         (transfer server-to-server ssh keys)"
+    echo "          [--help]             (print this message)"
+    echo
+    exit 1
+}
+
+if [ "$#" -eq 0 ]; then
+    displayHelp
+fi
+
+for i in "$@"; do
+    case $i in
+        *.pem|*.PEM)
+            pem=$i
+            ;;
+
+        --fs-jar)
+            fs_jar=true
+            instruction=true
+            ;;
+
+        --fs-client-jar)
+            fs_client_jar=true
+            instruction=true
+            ;;
+
+        --ls-jar)
+            ls_jar=true
+            instruction=true
+            ;;
+
+        --remove-logs)
+            logs=true
+            instruction=true
+            ;;
+
+        --start-ls)
+            start_ls=true
+            instruction=true
+            ;;
+
+        --all)
+            all=true
+            instruction=true
+            ;;
+
+        --ssh-keys)
+            ssh_keys=true
+            instruction=true
+            ;;
+
+        --help)
+            displayHelp
+            ;;
+
+        *)
+            displayHelp "unknown argument: $i"
+            ;;
+
+    esac
+done
+
+if [ -z "$pem" ]; then
+    displayHelp "error: must specify a pem file!"
+fi
+
+if [ ! -f "$pem" ]; then
+    displayHelp "error: $pem does not exist!"
+fi
+
+if [ -z "$instruction" ] && [ -z "$all" ]; then
+    displayHelp "error: must indicate actions to be performed!"
+fi
+
+file="servers.txt"
+
+ls_name="distributed-ls"
+fs_name="distributed-fs"
+fs_client_name="fs-client"
+
+if [ ! -f "$file" ]; then
+    displayHelp "error: $PWD/$file missing! Must be populated with EC2 instance urls/IPs"
+fi
+
+SSH_KEY_RENAME="
+    cd ~/.ssh; \
+    if ! grep --quiet "server-to-server" authorized_keys; then \
+        cat server-to-server.pub >> authorized_keys; \
+    fi; \
+    rm server-to-server.pub;
+"
+
+while IFS= read url
+do
+	echo ---
+    echo "instance: $url"
+
+    if [ ! -z "$ssh_keys" ]; then
+        # copy and configure server-to-server ssh keys
+        echo "copying server-to-server ssh keys..."
+        rsync -e "ssh -i $pem" keys/* ec2-user@"$url":.ssh/. < /dev/null
+
+        # renaming ssh keys
+        ssh -i "$pem" ec2-user@"$url" $SSH_KEY_RENAME < /dev/null
+    else
+        echo "attempting to kill running node..."
+        ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-fs-1.0.jar' < /dev/null
+
+        # distributed-fs jar file
+        if [ ! -z "$fs_jar" ] || [ ! -z "$all" ]; then
+            echo "copying $fs_name jar..."
+            scp -i "$pem" "$fs_name"/build/libs/"$fs_name"-1.0.jar ec2-user@"$url":/home/ec2-user
+        fi
+
+        # fs-client jar file
+        if [ ! -z "$fs_client_jar" ] || [ ! -z "$all" ]; then
+            echo "copying $fs_client_name jar..."
+            scp -i "$pem" "$fs_client_name"/build/libs/"$fs_client_name"-1.0.jar ec2-user@"$url":/home/ec2-user
+        fi
+
+        # distributed-ls jar file
+        if [ ! -z "$ls_jar" ] || [ ! -z "$all" ]; then
+            echo "copying $ls_name jar..."
+            scp -i "$pem" "$ls_name"/build/libs/"$ls_name"-1.0.jar ec2-user@"$url":/home/ec2-user
+
+            echo "copying command line scripts..."
+            scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
+            scp -i "$pem" "$ls_name"/scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
+            #ssh -i "$pem" ec2-user@"$url" 'chmod 755 start*' < /dev/null
+        fi
+
+        # remove logs
+        if [ ! -z "$logs" ] || [ ! -z "$all" ]; then
+            echo "deleting all logs..."
+            ssh -i "$pem" ec2-user@"$url" 'rm -f logs/*.log' < /dev/null
+        fi
+
+        # start distributed-ls server
+        if [ ! -z "$start_ls" ] || [ ! -z "$all" ]; then
+            echo "attempting to kill running ls-server..."
+            ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-ls-1.0.jar' < /dev/null
+
+            # start ls-server
+            echo "starting ls-server..."
+            ssh -i "$pem" ec2-user@"$url" './startServer' < /dev/null
+        fi
+    fi
+
+	echo
+done < "$file"
+
+echo "deployment complete!"

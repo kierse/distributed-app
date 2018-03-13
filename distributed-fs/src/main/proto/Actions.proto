@@ -5,6 +5,17 @@ package eece513.fs;
 option java_package = "eece513.fs";
 option java_outer_classname = "Actions";
 
+message Envelope {
+    enum Type {
+        _IGNORE = 0;
+        CLUSTER_ACTION = 1;
+        FILE_SYSTEM_ACTION = 2;
+    }
+
+    Type type = 1;
+    bytes action = 2;
+}
+
 message Request {
     enum Type {
         JOIN = 0;
@@ -33,5 +44,12 @@ message Membership {
     Timestamp timestamp = 1;
     string hostName = 2;
     int32 port = 3;
+}
+
+message FileSystem {
+    string remoteName = 1;
+    Timestamp timestamp = 2;
+    string hostName = 3;
+    int32 port = 4;
 }
 

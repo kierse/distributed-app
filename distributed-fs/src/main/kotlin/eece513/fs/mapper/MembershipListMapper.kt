@@ -1,23 +1,28 @@
 package eece513.fs.mapper
 
 import com.google.protobuf.InvalidProtocolBufferException
+import eece513.common.mapper.ByteMapper
+import eece513.common.mapper.EmptyByteArrayException
+import eece513.common.mapper.ObjectMapper
 import eece513.fs.Actions
 import eece513.fs.model.MembershipList
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import java.net.InetSocketAddress
 import java.time.Instant
 
-class MembershipListMapper : ObjectMapper<MembershipList> {
-    override fun toObject(byteArray: ByteArray): MembershipList {
+class MembershipListMapper : ObjectMapper<MembershipList>, ByteMapper<MembershipList> {
+//    override val type = MembershipList::class.java
+
+    override fun toObjectOrNull(byteArray: ByteArray): MembershipList? {
         if (byteArray.isEmpty()) {
-            throw ObjectMapper.EmptyByteArrayException("byteArray can't be empty!")
+            throw EmptyByteArrayException("byteArray can't be empty!")
         }
 
         val parsed: Actions.MembershipList
         try {
             parsed = Actions.MembershipList.parseFrom(byteArray)
         } catch (e: InvalidProtocolBufferException) {
-            throw ObjectMapper.ParseException(e)
+            return null
         }
 
         val nodes = mutableListOf<Node>()

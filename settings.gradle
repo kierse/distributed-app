@@ -1,4 +1,6 @@
 rootProject.name = 'distributed-app'
 include 'distributed-ls'
 include 'distributed-fs'
+include 'fs-client'
+include 'common'
 

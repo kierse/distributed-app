@@ -1,13 +1,13 @@
 package eece513.fs.channel
 
-import eece513.fs.mapper.ActionMapper
+import eece513.common.mapper.ByteMapper
+import eece513.common.model.Action
 import eece513.fs.message.SendableMessageFactory
-import eece513.fs.model.Action
 import java.nio.channels.WritableByteChannel
 
-class SendActionChannel(
+class SendClusterActionChannel(
         type: RingChannel.Type,
         channel: WritableByteChannel,
         messageFactory: SendableMessageFactory,
-        actionMapper: ActionMapper
-) : SendObjectChannel<Action>(type, channel, messageFactory, actionMapper)
+        mapper: ByteMapper<Action.ClusterAction>
+) : SendObjectChannel<Action.ClusterAction>(type, channel, messageFactory, mapper)

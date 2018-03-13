@@ -1,13 +1,13 @@
 
 buildscript {
-    ext.kotlin_version = '1.2.21'
+    ext.kotlin_version = '1.2.30'
 
     repositories {
         mavenCentral()
     }
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.4'
+        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.5'
     }
 }
 
@@ -30,11 +30,6 @@ subprojects {
         }
     }
 
-    configurations {
-        distributedTestCompile.extendsFrom testCompile
-        distributedTestRuntime.extendsFrom testRuntime
-    }
-
     compileKotlin {
         kotlinOptions.jvmTarget = "1.8"
     }
@@ -43,45 +38,19 @@ subprojects {
     }
 }
 
-project(':distributed-fs') {
-    apply plugin: 'com.google.protobuf'
+task jar { }
+jar.dependsOn ':distributed-fs:jar', ':distributed-ls:jar', ':fs-client:jar'
 
-    sourceSets {
-        main{
-            proto{
-                srcDirs += 'distributed-fs/src/main/proto'
-            }
+task configBootstrapAws {
+    doLast {
+        if (!project.hasProperty("pem")) {
+            throw new InvalidUserDataException("must provide path to PEM file!")
         }
-        test {
-            kotlin {
-                srcDirs += "distributed-fs/src/test/unit/kotlin"
-            }
-        }
-    }
 
-    protobuf {
-        generatedFilesBaseDir = "$projectDir/src"
-
-        protoc {
-            artifact = "com.google.protobuf:protoc:3.5.1"
-        }
+        bootstrapAws.commandLine "./scripts/deploymentScript", project.pem, "--all"
     }
 }
 
-project(':distributed-ls') {
-    sourceSets {
-        test {
-            kotlin {
-                srcDirs += "distributed-ls/src/test/unit/kotlin"
-            }
-        }
-        distributedTest {
-            kotlin {
-                srcDirs += "distributed-ls/src/test/distributed/kotlin"
-            }
-
-            compileClasspath += main.output + test.output
-            runtimeClasspath += main.output + test.output
-        }
-    }
+task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
+    dependsOn = ['jar', 'configBootstrapAws']
 }

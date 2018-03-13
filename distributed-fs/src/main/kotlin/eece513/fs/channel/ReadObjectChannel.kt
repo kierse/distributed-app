@@ -1,11 +1,13 @@
 package eece513.fs.channel
 
-import eece513.fs.Logger
-import eece513.fs.mapper.ObjectMapper
+import eece513.common.Logger
+import eece513.common.mapper.EmptyByteArrayException
+import eece513.common.mapper.ObjectMapper
+import eece513.common.mapper.ParseException
 import eece513.fs.message.ReadableMessageFactory
 import java.nio.channels.ReadableByteChannel
 
-open class ReadObjectChannel<out T>(
+open class ReadObjectChannel<T>(
         override val type: RingChannel.Type,
         private val channel: ReadableByteChannel,
         private val messageFactory: ReadableMessageFactory,
@@ -26,13 +28,18 @@ open class ReadObjectChannel<out T>(
                 ?.let {
                     try {
                         objectMapper.toObject(it)
-                    } catch (e: ObjectMapper.ParseException) {
+                    } catch (e: ParseException) {
                         logger.error(tag, "Error mapping heartbeat action: %s", e)
                         null
-                    } catch (e: ObjectMapper.EmptyByteArrayException) {
+                    } catch (e: EmptyByteArrayException) {
                         logger.error(tag, "Message body empty! %s", e)
                         null
                     }
                 }
+    }
+
+    fun <S : T> readTyped(): S? {
+        @Suppress("UNCHECKED_CAST")
+        return read() as S?
     }
 }

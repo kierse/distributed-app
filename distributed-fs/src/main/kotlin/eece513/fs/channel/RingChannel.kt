@@ -4,12 +4,21 @@ interface RingChannel {
     val type: Type
 
     enum class Type {
-        JOIN_ACCEPT,
+        NODE_ACCEPT,
+        NODE_ACCEPT_READ,
         JOIN_ACCEPT_READ,
         JOIN_ACCEPT_WRITE,
         JOIN_CONNECT,
-        JOIN_CONNECT_WRITE,
+        JOIN_CONNECT_ACTION_WRITE,
+        JOIN_CONNECT_PURPOSE_WRITE,
         JOIN_CONNECT_READ,
+        CLIENT_GET,
+        CLIENT_GET_WRITE,
+        CLIENT_REMOVE,
+        CLIENT_REMOVE_WRITE,
+        CLIENT_PUT,
+        CLIENT_PUT_CONFIRM,
+        CLIENT_PUT_WRITE,
         PREDECESSOR_ACCEPT,
         PREDECESSOR_ACTION_READ,
         PREDECESSOR_ACTION_WRITE,

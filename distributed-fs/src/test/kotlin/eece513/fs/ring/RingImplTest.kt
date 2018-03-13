@@ -2,12 +2,12 @@ package eece513.fs.ring
 
 import com.nhaarman.mockito_kotlin.*
 import eece513.fs.DummyLogger
-import eece513.fs.Logger
+import eece513.common.Logger
 import eece513.fs.PredecessorHeartbeatMonitorController
 import eece513.fs.channel.*
-import eece513.fs.model.Action
+import eece513.common.model.Action
 import eece513.fs.model.MembershipList
-import eece513.fs.model.Node
+import eece513.common.model.Node
 import eece513.fs.util.SuccessorSentActions
 import kotlinx.coroutines.experimental.channels.Channel
 import org.junit.Assert.*
@@ -19,6 +19,7 @@ import java.time.Instant
 class RingImplTest {
     private val node = Node(InetSocketAddress("127.0.0.1", 6969), Instant.now())
     private val logger = DummyLogger()
+    private val fileSystem = mock<FileSystem>()
 
     @Test
     fun processActionsFromPredecessor__empty_list() {
@@ -27,7 +28,7 @@ class RingImplTest {
         val reader = mock<ReadActionChannel>()
         whenever(reader.read()).thenReturn(null)
 
-        val ring = RingImpl(node, membershipList, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, membershipList, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
 
         assertEquals(membershipList, ring.membershipList)
@@ -39,9 +40,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node, newNode))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Leave(newNode), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Leave(newNode), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
 
         assertEquals(MembershipList(listOf(node)), ring.membershipList)
@@ -50,9 +51,9 @@ class RingImplTest {
     @Test
     fun processActionsFromPredecessor__filter_self_join() {
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Join(node), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Join(node), null)
 
-        val ring = RingImpl(node, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.processActionsFromPredecessor(node, reader)
@@ -65,9 +66,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Join(node), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Join(node), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.processActionsFromPredecessor(node, reader)
@@ -81,9 +82,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Join(newNode), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Join(newNode), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.processActionsFromPredecessor(node, reader)
@@ -98,9 +99,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Join(newNode), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Join(newNode), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.processActionsFromPredecessor(node, reader)
@@ -114,9 +115,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node, newNode))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Drop(newNode), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Drop(newNode), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
 
         assertEquals(MembershipList(listOf(node)), ring.membershipList)
@@ -128,9 +129,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node, newNode))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Drop(newNode), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Drop(newNode), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
 
         assertTrue(ring.rebuildRing)
@@ -141,9 +142,9 @@ class RingImplTest {
         val list = MembershipList(listOf(node))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Heartbeat(node), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Heartbeat(node), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
     }
 
@@ -152,20 +153,20 @@ class RingImplTest {
         val list = MembershipList(listOf(node))
 
         val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Connect(node), null)
+        whenever(reader.read()).thenReturn(Action.ClusterAction.Connect(node), null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processActionsFromPredecessor(node, reader)
     }
 
     @Test
     fun processActionsFromPredecessor__add_to_pending_actions() {
-        val action = Action.Drop(node)
+        val action = Action.ClusterAction.Drop(node)
 
         val reader = mock<ReadActionChannel>()
         whenever(reader.read()).thenReturn(action, null)
 
-        val ring = RingImpl(node, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.processActionsFromPredecessor(node, reader)
@@ -175,15 +176,15 @@ class RingImplTest {
 
     @Test
     fun sendActionsToSuccessor__queue_actions() {
-        val actions = mutableListOf(
-                Action.Join(node),
-                Action.Drop(node)
+        val actions = mutableListOf<Action>(
+                Action.ClusterAction.Join(node),
+                Action.ClusterAction.Drop(node)
         )
 
         val sender = mock<BufferedSendActionChannel>()
         whenever(sender.send()).doReturn(actions.map { true }.plus(false))
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
         ring.sentSuccessorActions[node] = SuccessorSentActions()
 
@@ -195,12 +196,12 @@ class RingImplTest {
 
     @Test
     fun sendActionsToSuccessor__send_actions_to_channel() {
-        val actions: MutableList<Action> = mutableListOf(Action.Join(node))
+        val actions: MutableList<Action> = mutableListOf(Action.ClusterAction.Join(node))
 
         val sender = mock<BufferedSendActionChannel>()
         whenever(sender.send()).thenReturn(true, false)
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
         ring.sentSuccessorActions[node] = SuccessorSentActions()
 
@@ -214,7 +215,7 @@ class RingImplTest {
         val sender = mock<BufferedSendActionChannel>()
         whenever(sender.send()).thenReturn(true, true, true, false)
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.sendActionsToSuccessor(node, sender)
@@ -224,15 +225,15 @@ class RingImplTest {
 
     @Test
     fun sendActionsToSuccessor__move_pending_actions_to_sent_actions() {
-        val actions = mutableListOf(
-                Action.Join(node),
-                Action.Drop(node)
+        val actions = mutableListOf<Action>(
+                Action.ClusterAction.Join(node),
+                Action.ClusterAction.Drop(node)
         )
 
         val sender = mock<BufferedSendActionChannel>()
         whenever(sender.send()).thenReturn(true, false)
 
-        val ring = RingImpl(node, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
         ring.sentSuccessorActions[node] = SuccessorSentActions()
 
@@ -248,7 +249,7 @@ class RingImplTest {
         val sender = mock<BufferedSendActionChannel>()
         whenever(sender.send()).thenReturn(false)
 
-        val ring = RingImpl(node, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.sendActionsToSuccessor(node, sender)
@@ -259,7 +260,7 @@ class RingImplTest {
 
     @Test
     fun addSuccessor() {
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
 
@@ -269,7 +270,7 @@ class RingImplTest {
 
     @Test
     fun removeSuccessor() {
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.removeSuccessor(node)
@@ -280,29 +281,29 @@ class RingImplTest {
 
     @Test
     fun dropPredecessor() {
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(node)
         ring.dropPredecessor(node)
 
-        assertTrue(ring.pendingSuccessorActions.getValue(node).contains(Action.Drop(node)))
+        assertTrue(ring.pendingSuccessorActions.getValue(node).contains(Action.ClusterAction.Drop(node)))
     }
 
     @Test
     fun processJoinRequest__empty_read_action_channel() {
-        assertFalse(RingImpl(node, mock(), logger).processJoinRequest(mock()))
+        assertFalse(RingImpl(node, fileSystem, Channel(), logger).processJoinRequest(mock()))
     }
 
     @Test
     fun processJoinRequest__add_to_pending_actions() {
         val a = Node(InetSocketAddress("127.0.0.1", 6970), Instant.now())
         val newNode = Node(InetSocketAddress("127.0.0.1", 6971), Instant.now())
-        val join = Action.Join(newNode)
+        val join = Action.ClusterAction.Join(newNode)
 
-        val channel = mock<ReadActionChannel>()
-        whenever(channel.read()).thenReturn(join, null)
+        val channel = mock<ReadClusterActionChannel>()
+        whenever(channel.readTyped<Action.ClusterAction.Join>()).thenReturn(join, null)
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.addSuccessor(node)
         ring.addSuccessor(a)
         ring.processJoinRequest(channel)
@@ -315,10 +316,10 @@ class RingImplTest {
     fun processJoinRequest() {
         val newNode = Node(InetSocketAddress("127.0.0.1", 6970), Instant.now())
 
-        val channel = mock<ReadActionChannel>()
-        whenever(channel.read()).thenReturn(Action.Join(newNode), null)
+        val channel = mock<ReadClusterActionChannel>()
+        whenever(channel.readTyped<Action.ClusterAction.Join>()).thenReturn(Action.ClusterAction.Join(newNode), null)
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         assertTrue(ring.processJoinRequest(channel))
         assertEquals(MembershipList(listOf(node, newNode)), ring.membershipList)
@@ -328,22 +329,22 @@ class RingImplTest {
     fun sendMembershipList() {
         val sender = mock<SendMembershipListChannel>()
         val membershipList = MembershipList(listOf(node))
-        RingImpl(node, membershipList, Channel(), logger).sendMembershipList(sender)
+        RingImpl(node, fileSystem, membershipList, Channel(), logger).sendMembershipList(sender)
 
         verify(sender).send(membershipList)
     }
 
     @Test
     fun sendJoinRequest() {
-        val sender = mock<SendActionChannel>()
-        RingImpl(node, Channel(), logger).sendJoinRequest(sender)
+        val sender = mock<SendClusterActionChannel>()
+        RingImpl(node, fileSystem, Channel(), logger).sendJoinRequest(sender)
 
-        verify(sender).send(Action.Join(node))
+        verify(sender).send(Action.ClusterAction.Join(node))
     }
 
     @Test
     fun readMembershipList__empty_channel() {
-        assertFalse(RingImpl(node, mock(), logger).readMembershipList(mock()))
+        assertFalse(RingImpl(node, fileSystem, Channel(), logger).readMembershipList(mock()))
     }
 
     @Test
@@ -353,9 +354,9 @@ class RingImplTest {
         ))
 
         val reader = mock<ReadMembershipListChannel>()
-        whenever(reader.read()).thenReturn(newList)
+        whenever(reader.readTyped<MembershipList>()).thenReturn(newList)
 
-        val ring = RingImpl(node, mock(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.readMembershipList(reader)
 
@@ -364,30 +365,30 @@ class RingImplTest {
 
     @Test
     fun sendIdentity() {
-        val sender = mock<SendActionChannel>()
-        RingImpl(node, Channel(), logger).sendIdentity(sender)
+        val sender = mock<SendClusterActionChannel>()
+        RingImpl(node, fileSystem, Channel(), logger).sendIdentity(sender)
 
-        verify(sender).send(Action.Connect(node))
+        verify(sender).send(Action.ClusterAction.Connect(node))
     }
 
     @Test
     fun readIdentity() {
-        val reader = mock<ReadActionChannel>()
-        whenever(reader.read()).thenReturn(Action.Connect(node))
+        val reader = mock<ReadClusterActionChannel>()
+        whenever(reader.readTyped<Action.ClusterAction.Connect>()).thenReturn(Action.ClusterAction.Connect(node))
 
-        assertEquals(node, RingImpl(node, Channel(), logger).readIdentity(reader))
+        assertEquals(node, RingImpl(node, fileSystem, Channel(), logger).readIdentity(reader))
     }
 
     @Test
     fun readIdentity__empty_channel() {
-        assertNull(RingImpl(node, Channel(), logger).readIdentity(mock()))
+        assertNull(RingImpl(node, fileSystem, Channel(), logger).readIdentity(mock()))
     }
 
     @Test
     fun processHeartbeat__empty_channel() {
         val heartbeatChannel = mock<Channel<PredecessorHeartbeatMonitorController.Heartbeat>>()
 
-        RingImpl(node, heartbeatChannel, logger).processHeartbeat(mock())
+        RingImpl(node, fileSystem, heartbeatChannel, logger).processHeartbeat(mock())
 
         verify(heartbeatChannel, never()).offer(any())
     }
@@ -399,7 +400,7 @@ class RingImplTest {
 
         val heartbeatChannel = Channel<PredecessorHeartbeatMonitorController.Heartbeat>(1)
 
-        RingImpl(node, heartbeatChannel, logger).processHeartbeat(reader)
+        RingImpl(node, fileSystem, heartbeatChannel, logger).processHeartbeat(reader)
 
         assertEquals(PredecessorHeartbeatMonitorController.Heartbeat(node), heartbeatChannel.poll())
     }
@@ -411,7 +412,7 @@ class RingImplTest {
 
         val logger = mock<Logger>()
 
-        RingImpl(node, Channel(), logger).processHeartbeat(reader)
+        RingImpl(node, fileSystem, Channel(), logger).processHeartbeat(reader)
 
         verify(logger).warn(any(), any())
     }
@@ -427,7 +428,7 @@ class RingImplTest {
         val reader = mock<MissedHeartbeatChannel>()
         whenever(reader.read()).thenReturn(a, b, c, null)
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
         ring.processMissedHeartbeats(reader)
 
         assertEquals(MembershipList(listOf(node)), ring.membershipList)
@@ -436,12 +437,12 @@ class RingImplTest {
     @Test
     fun leave() {
         val a = Node(InetSocketAddress("127.0.0.1", 6970), Instant.now())
-        val ring = RingImpl(node, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, Channel(), logger)
 
         ring.addSuccessor(a)
         ring.leave()
 
-        assertTrue(ring.pendingSuccessorActions.getValue(a).contains(Action.Leave(node)))
+        assertTrue(ring.pendingSuccessorActions.getValue(a).contains(Action.ClusterAction.Leave(node)))
     }
 
     @Test
@@ -452,7 +453,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a, b, c))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(c, b, a), ring.getPredecessors())
     }
@@ -464,7 +465,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a, b))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(b, a), ring.getPredecessors())
     }
@@ -475,7 +476,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(a), ring.getPredecessors())
     }
@@ -484,7 +485,7 @@ class RingImplTest {
     fun getPredecessors__none() {
         val list = MembershipList(listOf(node))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(emptyList<Node>(), ring.getPredecessors())
     }
@@ -497,7 +498,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a, b, c))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(a, b, c), ring.getSuccessors())
     }
@@ -509,7 +510,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a, b))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(a, b), ring.getSuccessors())
     }
@@ -520,7 +521,7 @@ class RingImplTest {
 
         val list = MembershipList(listOf(node, a))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(listOf(a), ring.getSuccessors())
     }
@@ -529,8 +530,15 @@ class RingImplTest {
     fun getSuccessors__empty() {
         val list = MembershipList(listOf(node))
 
-        val ring = RingImpl(node, list, Channel(), logger)
+        val ring = RingImpl(node, fileSystem, list, Channel(), logger)
 
         assertEquals(emptyList<Node>(), ring.getSuccessors())
     }
+
+//    private fun buildRing(
+//            self: Node, list: MembershipList, channel: SendChannel<PredecessorHeartbeatMonitorController.Heartbeat>
+//    ): RingImpl {
+//        val logger = DummyLogger()
+//        return RingImpl(self, list, channel, fileSystem, logger)
+//    }
 }
