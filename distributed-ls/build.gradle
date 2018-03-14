@@ -1,0 +1,49 @@
+dependencies {
+    // kotlin
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+
+    // tinylog
+    compile group: 'org.tinylog', name: 'tinylog', version: '1.3.2'
+
+    // junit
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    distributedTestCompile group: 'junit', name: 'junit', version: '4.12'
+
+    // mockito
+    testCompile group: 'org.mockito', name: 'mockito-core', version: '2.13.0'
+    distributedTestCompile group: 'org.mockito', name: 'mockito-core', version: '2.13.0'
+
+    testCompile group: 'com.nhaarman', name: 'mockito-kotlin', version: '1.5.0'
+    distributedTestCompile group: 'com.nhaarman', name: 'mockito-kotlin', version: '1.5.0'
+
+    testCompile group: 'org.jetbrains.kotlin', name: 'kotlin-reflect', version: '1.2.20'
+    distributedTestCompile group: 'org.jetbrains.kotlin', name: 'kotlin-reflect', version: '1.2.20'
+}
+
+jar {
+    manifest {
+        attributes "Main-Class": "eece513.ls.GrepServer"
+    }
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+task distributedTest(type: Test, description: 'Runs the distributed tests.', group: 'Verification') {
+    setTestClassesDirs sourceSets.distributedTest.output.classesDirs
+    classpath = sourceSets.distributedTest.runtimeClasspath
+}
+
+task configBootstrapAws {
+    doLast {
+        if (!project.hasProperty("pem")) {
+            throw new InvalidUserDataException("must provide path to PEM file!")
+        }
+
+        bootstrapAws.commandLine "./distributed-ls/scripts/deploymentScript", project.pem, "--all"
+    }
+}
+
+task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
+    dependsOn = ['configBootstrapAws']
+}
