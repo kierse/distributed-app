@@ -76,3 +76,6 @@ servers.txt
 
 src/main/java
 csshx
+
+*.pem
+servers.txt

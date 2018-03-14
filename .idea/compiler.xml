@@ -4,6 +4,11 @@
     <bytecodeTargetLevel>
       <module name="distributed-app_main" target="1.8" />
       <module name="distributed-app_test" target="1.8" />
+      <module name="distributed-fs_main" target="1.8" />
+      <module name="distributed-fs_test" target="1.8" />
+      <module name="distributed-ls_distributedTest" target="1.8" />
+      <module name="distributed-ls_main" target="1.8" />
+      <module name="distributed-ls_test" target="1.8" />
     </bytecodeTargetLevel>
   </component>
 </project>
