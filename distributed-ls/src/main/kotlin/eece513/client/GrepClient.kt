@@ -83,7 +83,6 @@ class GrepClient(
                     val result = queue.poll() ?: break
                     if (args.first() == LOCATE_CMD) {
                         presenter.displayMachinesOnly(result)
-
                     } else {
                         presenter.displayResponse(result)
                     }
