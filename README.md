@@ -47,6 +47,16 @@ Note: will need to be running code 'Assignment02' tag or later
 ```
  > ./gradlew test
 ```
+## SETUP LOCATE COMMAND ###
+### To install Locate ###
+```
+> sudo yum install mlocate
+> sudo updatedb
+```
+### To make locat.db visible ###
+```
+> updatedb --require-visibility 0 -o ~/.locate.db
+```
 
 ## UPGRADE FROM JAVA7/8 TO JAVA9 ###
 

@@ -21,6 +21,10 @@ class GrepQueryService(
     override fun search(
             args: Array<String>, onResult: (String) -> Unit, onError: (Array<String>) -> Unit
     ) {
+        if (args.first() == LOCATE_CMD) {
+            Runtime.getRuntime().exec("sudo updatedb")
+        }
+
         val argsList = arrayOf(*args)
         logger.debug(tag, "grep cmd: {}", argsList.joinToString(" "))
 
