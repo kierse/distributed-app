@@ -1,3 +1,4 @@
+
 buildscript {
     ext.kotlin_version = '1.2.21'
 
@@ -10,96 +11,77 @@ buildscript {
     }
 }
 
-group 'eece513'
-version '1.0'
+subprojects {
+    group 'eece513'
+    version '1.0'
 
-apply plugin: 'java'
-apply plugin: 'kotlin'
-apply plugin: 'com.google.protobuf'
+    apply plugin: 'java'
+    apply plugin: 'kotlin'
 
-sourceCompatibility = 1.8
+    sourceCompatibility = 1.8
 
-repositories {
-    mavenCentral()
+    repositories {
+        mavenCentral()
+    }
+
+    kotlin {
+        experimental {
+            coroutines 'enable'
+        }
+    }
+
+    configurations {
+        distributedTestCompile.extendsFrom testCompile
+        distributedTestRuntime.extendsFrom testRuntime
+    }
+
+    compileKotlin {
+        kotlinOptions.jvmTarget = "1.8"
+    }
+    compileTestKotlin {
+        kotlinOptions.jvmTarget = "1.8"
+    }
 }
 
-sourceSets {
-    main{
-        proto{
-            srcDirs += 'src/main/proto'
-         }
+project(':distributed-fs') {
+    apply plugin: 'com.google.protobuf'
+
+    sourceSets {
+        main{
+            proto{
+                srcDirs += 'distributed-fs/src/main/proto'
+            }
+        }
+        test {
+            kotlin {
+                srcDirs += "distributed-fs/src/test/unit/kotlin"
+            }
+        }
     }
-    test {
-        kotlin {
-            srcDirs += "src/test/unit/kotlin"
+
+    protobuf {
+        generatedFilesBaseDir = "$projectDir/src"
+
+        protoc {
+            artifact = "com.google.protobuf:protoc:3.5.1"
         }
     }
 }
 
-
-dependencies {
-    // kotlin
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
-    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.2'
-    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.22.2'
-    testCompile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-
-    // protobuf
-    compile "com.google.protobuf:protobuf-gradle-plugin:0.8.4"
-    compile group: 'com.google.protobuf', name: 'protobuf-java', version: '3.5.1'
-
-    // tinylog
-    compile group: 'org.tinylog', name: 'tinylog', version: '1.3.2'
-
-    // junit
-    testCompile group: 'junit', name: 'junit', version: '4.12'
-
-    // mockito
-    testCompile group: 'org.mockito', name: 'mockito-core', version: '2.13.0'
-    testCompile group: 'com.nhaarman', name: 'mockito-kotlin', version: '1.5.0'
-}
-
-kotlin {
-    experimental {
-        coroutines 'enable'
-    }
-}
-
-protobuf {
-    generatedFilesBaseDir = "$projectDir/src"
-
-    protoc {
-        artifact = "com.google.protobuf:protoc:3.5.1"
-    }
-}
-
-jar {
-    manifest {
-        attributes "Main-Class": "eece513.fs.ClusterNodeKt"
-    }
-
-    from {
-        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-}
-
-compileKotlin {
-    kotlinOptions.jvmTarget = "1.8"
-}
-compileTestKotlin {
-    kotlinOptions.jvmTarget = "1.8"
-}
-
-task configBootstrapAws {
-    doLast {
-        if (!project.hasProperty("pem")) {
-            throw new InvalidUserDataException("must provide path to PEM file!")
+project(':distributed-ls') {
+    sourceSets {
+        test {
+            kotlin {
+                srcDirs += "distributed-ls/src/test/unit/kotlin"
+            }
         }
+        distributedTest {
+            kotlin {
+                srcDirs += "distributed-ls/src/test/distributed/kotlin"
+            }
 
-        bootstrapAws.commandLine "./scripts/deploymentScript", project.pem, "--all"
+            compileClasspath += main.output + test.output
+            runtimeClasspath += main.output + test.output
+        }
     }
-}
-
-task bootstrapAws(type: Exec, description: 'Configure AWS servers', group: 'Configuration') {
-    dependsOn = ['jar', 'configBootstrapAws']
 }

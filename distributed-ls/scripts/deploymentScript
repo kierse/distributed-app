@@ -1,0 +1,29 @@
+#/bin/sh
+
+pem="Ubuntu1.pem"
+while IFS= read url
+do
+	echo ---
+    echo "instance: $url"
+
+	echo "attempting to kill running grep-server..."
+ 	ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-ls-1.0.jar' < /dev/null
+
+    echo "copying list of servers..."
+    scp -i "$pem" $PWD/servers.txt ec2-user@"$url":/home/ec2-user < /dev/null
+
+    echo "copying jar..."
+    scp -i "$pem" build/libs/distributed-ls-1.0.jar ec2-user@"$url":/home/ec2-user < /dev/null
+
+    echo "copying command line scripts..."
+    scp -i "$pem" scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
+    scp -i "$pem" scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
+
+    echo "starting grep-server..."
+    ssh -i "$pem" ec2-user@"$url" './startServer' < /dev/null
+
+	echo
+
+done < "servers.txt"
+
+echo "deployment complete!"

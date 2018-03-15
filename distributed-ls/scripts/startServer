@@ -1,0 +1,4 @@
+#/bin/sh
+
+java -cp ~/distributed-ls-1.0.jar eece513.server.GrepServer > /dev/null 2>&1 &
+exit 0

@@ -1,0 +1,3 @@
+#/bin/sh
+
+java -cp ~/distributed-ls-1.0.jar eece513.client.GrepClient "$@"
