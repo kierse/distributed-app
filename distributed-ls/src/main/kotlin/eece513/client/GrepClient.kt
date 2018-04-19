@@ -1,8 +1,12 @@
 package eece513.client
 
 import eece513.*
+import eece513.common.FILE_SYSTEM_PATH
+import eece513.common.FILE_SYSTEM_SEPARATOR
 import eece513.common.SERVERS_FILE_PATH
 import eece513.common.util.FileIO
+import eece513.common.util.unescapeFileName
+import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
 
@@ -61,12 +65,11 @@ class GrepClient(
 
     fun search(args: Array<String>) {
         if (args.first() == LSHERE_CMD) {
-            val proc = ProcessBuilder(LS_CMD)
-                    .redirectOutput(ProcessBuilder.Redirect.PIPE)
-                    .redirectError(ProcessBuilder.Redirect.PIPE)
-                    .start()
+            getLocalFiles()
+                    .forEach { file ->
+                        println(unescapeFileName(file.name.substringBeforeLast(FILE_SYSTEM_SEPARATOR)))
+                    }
 
-            println(proc.inputStream.bufferedReader().readText())
         } else if (args.first() == LS_CMD || args.first() == LOCATE_CMD) {
             val queue: ConcurrentLinkedQueue<Server.Response> = ConcurrentLinkedQueue()
             logger.info(tag, "args: [{}]", args.joinToString(", "))
@@ -98,5 +101,17 @@ class GrepClient(
         return queries.filterNot { query ->
             query.isComplete()
         }
+    }
+
+    private fun getLocalFiles(): List<File> {
+        val fileNames = mutableSetOf<String>()
+
+        return File(FILE_SYSTEM_PATH)
+                .listFiles()
+                .sortedBy { it.name }
+                .reversed()
+                .filter { file ->
+                    fileNames.add(file.name)
+                }
     }
 }

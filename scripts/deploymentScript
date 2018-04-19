@@ -13,6 +13,7 @@ function displayHelp {
     echo "          [--ls-jar]           (transfer distributed-ls jar file)"
     echo "          [--remove-logs]      (delete all logs)"
     echo "          [--start-ls]         (start ls-server)"
+    echo "          [--scripts]          (transfer command line scripts)"
     echo "          [--all]              (all of the above)"
     echo "          [--ssh-keys]         (transfer server-to-server ssh keys)"
     echo "          [--help]             (print this message)"
@@ -52,6 +53,11 @@ for i in "$@"; do
 
         --start-ls)
             start_ls=true
+            instruction=true
+            ;;
+
+        --scripts)
+            scripts=true
             instruction=true
             ;;
 
@@ -122,11 +128,14 @@ do
         echo "attempting to kill running node..."
         ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-fs-1.0.jar' < /dev/null
 
-        echo "copying command line scripts..."
-        scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
-        scp -i "$pem" "$ls_name"/scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
-        scp -i "$pem" scripts/fs513 ec2-user@"$url":/home/ec2-user < /dev/null
-        ssh -i "$pem" ec2-user@"$url" 'chmod 755 start* fs513' < /dev/null
+        # distributed-fs jar file
+        if [ ! -z "$scripts" ] || [ ! -z "$all" ]; then
+            echo "copying command line scripts..."
+            scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
+            scp -i "$pem" "$ls_name"/scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
+            scp -i "$pem" scripts/fs513 ec2-user@"$url":/home/ec2-user < /dev/null
+            ssh -i "$pem" ec2-user@"$url" 'chmod 755 start* fs513' < /dev/null
+        fi
 
         # distributed-fs jar file
         if [ ! -z "$fs_jar" ] || [ ! -z "$all" ]; then

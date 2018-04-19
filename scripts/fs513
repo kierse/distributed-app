@@ -61,6 +61,10 @@ case $1 in
         remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
         ;;
 
+    lshere)
+        java -cp distributed-ls-1.0.jar eece513.client.GrepClient "$1"
+        ;;
+
     --help)
         displayHelp
         ;;

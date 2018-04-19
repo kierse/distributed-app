@@ -1,6 +1,8 @@
 package eece513.fs.ring
 
 import eece513.common.*
+import eece513.common.util.escapeFileName
+import eece513.common.util.unescapeFileName
 import kotlinx.coroutines.experimental.CommonPool
 import kotlinx.coroutines.experimental.launch
 import java.io.BufferedReader
@@ -34,7 +36,7 @@ class FileSystem(private val logger: Logger) {
             File(FILE_SYSTEM_PATH)
                     .listFiles()
                     .filter { file ->
-                        file.name.startsWith(escapeRemoteFileName(remoteName))
+                        file.name.startsWith(escapeFileName(remoteName))
                     }
                     .forEach { file ->
                         // Note: assuming we are the file owner here
@@ -48,7 +50,7 @@ class FileSystem(private val logger: Logger) {
         return File(FILE_SYSTEM_PATH)
                 .listFiles()
                 .filter { file ->
-                    file.name.startsWith(escapeRemoteFileName(remoteName))
+                    file.name.startsWith(escapeFileName(remoteName))
                 }
                 .sortedBy { it.name }
                 .lastOrNull()
@@ -75,30 +77,22 @@ class FileSystem(private val logger: Logger) {
     }
 
     private fun parseFileName(pathToFile: String): Pair<String, Instant> {
-        val name = pathToFile.substringBeforeLast("-")
-        val number = pathToFile.substringAfterLast("-")
+        val name = pathToFile.substringBeforeLast(FILE_SYSTEM_SEPARATOR)
+        val number = pathToFile.substringAfterLast(FILE_SYSTEM_SEPARATOR)
 
         return Pair(
-                unescapeRemoteFileName(name),
+                unescapeFileName(name),
                 Instant.ofEpochMilli(number.toLong())
         )
     }
 
     fun buildEncodedFileName(remoteFileName: String, timestamp: Instant): File {
-        return File(FILE_SYSTEM_PATH + "/${escapeRemoteFileName(remoteFileName)}-${timestamp.toEpochMilli()}")
+        return File(FILE_SYSTEM_PATH + "/${escapeFileName(remoteFileName)}$FILE_SYSTEM_SEPARATOR${timestamp.toEpochMilli()}")
     }
 
     private fun decodeHumanReadableFileName(pathToFile: String): String {
         val encodedFileName = pathToFile.substringAfterLast("/")
-        return unescapeRemoteFileName(encodedFileName.substringBeforeLast("-"))
-    }
-
-    private fun escapeRemoteFileName(remoteName: String): String {
-        return remoteName.replace("/", "+")
-    }
-
-    private fun unescapeRemoteFileName(escapedRemoteName: String): String {
-        return escapedRemoteName.replace("+", "/")
+        return unescapeFileName(encodedFileName.substringBeforeLast(FILE_SYSTEM_SEPARATOR))
     }
 
     fun confirmPut(@Suppress("UNUSED_PARAMETER") pathToFile: String) {
