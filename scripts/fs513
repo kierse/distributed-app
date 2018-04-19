@@ -1,0 +1,73 @@
+#/bin/sh
+
+distributed_ls="distributed-ls-1.0.jar"
+fs_client="fs-client-1.0.jar"
+
+function displayHelp {
+    if [ ! -z "$1" ]; then
+        echo $1
+    fi
+
+    echo "usage: ./fs513 <action> [<option1> <option2>]"
+    echo
+    echo " Actions:"
+    echo "    put <localFileName> <remoteFileName>           (add a local file to fs513 with the given fs513 name)"
+    echo "    get <remoteFileName> <localFileName>           (fetch a fs513 file to the local machine)"
+    echo "    remove <remoteFileName>                        (delete a file from fs513)"
+    echo "    locate <remoteFileName>                        (list all machines (name / id / IP address) of the servers that contain a copy of the file)"
+    echo "    ls                                             (list all files in fs513)"
+    echo "    lshere                                         (list all fs513 files stored on the local machine)"
+    echo
+    echo "    --help                                         (print this message)"
+    echo
+    exit 1
+}
+
+function getCommandArgument {
+    if [ -z "$1" ]; then
+        displayHelp "error: $2"
+    fi
+
+    echo "$1"
+}
+
+if [ "$#" -eq 0 ]; then
+    displayHelp
+fi
+
+# grab command
+action=$1
+
+# grab command args
+case $1 in
+    put)
+        localFileName=$(getCommandArgument $2 "must specify a localFileName")
+        remoteFileName=$(getCommandArgument $3 "must specify a remoteFileName")
+        java -jar $fs_client "put" $localFileName $remoteFileName
+        ;;
+
+    get)
+        remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
+        localFileName=$(getCommandArgument $3 "must specify a localFileName")
+        java -jar $fs_client "get" $remoteFileName $localFileName
+        ;;
+
+    remove)
+        remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
+        java -jar $fs_client "remove" $remoteFileName
+        ;;
+
+    locate)
+        remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
+        ;;
+
+    --help)
+        displayHelp
+        ;;
+
+    *)
+        displayHelp "unknown argument: $i"
+        ;;
+esac
+
+

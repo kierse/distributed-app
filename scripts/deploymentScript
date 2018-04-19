@@ -122,6 +122,12 @@ do
         echo "attempting to kill running node..."
         ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-fs-1.0.jar' < /dev/null
 
+        echo "copying command line scripts..."
+        scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
+        scp -i "$pem" "$ls_name"/scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
+        scp -i "$pem" scripts/fs513 ec2-user@"$url":/home/ec2-user < /dev/null
+        ssh -i "$pem" ec2-user@"$url" 'chmod 755 start* fs513' < /dev/null
+
         # distributed-fs jar file
         if [ ! -z "$fs_jar" ] || [ ! -z "$all" ]; then
             echo "copying $fs_name jar..."
@@ -138,11 +144,6 @@ do
         if [ ! -z "$ls_jar" ] || [ ! -z "$all" ]; then
             echo "copying $ls_name jar..."
             scp -i "$pem" "$ls_name"/build/libs/"$ls_name"-1.0.jar ec2-user@"$url":/home/ec2-user
-
-            echo "copying command line scripts..."
-            scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null
-            scp -i "$pem" "$ls_name"/scripts/startServer ec2-user@"$url":/home/ec2-user < /dev/null
-            #ssh -i "$pem" ec2-user@"$url" 'chmod 755 start*' < /dev/null
         fi
 
         # remove logs
