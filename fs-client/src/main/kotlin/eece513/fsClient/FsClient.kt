@@ -178,7 +178,7 @@ class FsClient(
     }
 
     private fun pushFileToNodes(response: FsResponse.PutResponse, command: FsCommand.FsPut) = runBlocking {
-        val context = newFixedThreadPoolContext(2, "pushFileToNode")
+        val context = newFixedThreadPoolContext(3, "pushFileToNode")
 
         val jobs = remoteAddresses.map { remoteAddress ->
             logger.debug(tag, "pushing file to ${remoteAddress.hostName}")

@@ -17,7 +17,7 @@ sealed class Action {
 
     sealed class FileSystemAction : Action() {
         abstract val sender: Node
-        class RemoveFile(val remoteName: String, override val sender: Node) : FileSystemAction()
+        data class RemoveFile(val remoteName: String, override val sender: Node) : FileSystemAction()
     }
 }
 

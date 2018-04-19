@@ -32,8 +32,6 @@ interface Ring {
     fun getPredecessors(): List<Node>
     fun getSuccessors(): List<Node>
 
-    fun getRandomNodes(): List<Node>
-
     fun processFileRemove(channel: ReadFsCommandChannel): Boolean
     fun sendFileRemoveResponse(channel: SendFsResponseChannel): Boolean
 

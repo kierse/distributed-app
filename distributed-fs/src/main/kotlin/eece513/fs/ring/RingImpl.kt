@@ -104,8 +104,7 @@ class RingImpl /* testing */ constructor(
         }
 
         // repeated send queued actions until all are sent or channel is full
-        while (channel.send()) { /* do nothing */
-        }
+        while (channel.send()) { /* do nothing */ }
     }
 
     private fun processAction(action: Action) {
@@ -148,15 +147,11 @@ class RingImpl /* testing */ constructor(
 
     private fun processFileSystemAction(action: Action.FileSystemAction.RemoveFile) {
         fileSystem.removeFile(action.remoteName)
-
-        pendingSuccessorActions.values.forEach { list ->
-            list.add(action)
-        }
     }
 
     override fun addSuccessor(successor: Node) {
         pendingSuccessorActions[successor] = mutableListOf()
-        sentSuccessorActions[successor] = SuccessorSentActions()
+        sentSuccessorActions[successor] = SuccessorSentActions(logger = logger)
     }
 
     override fun removeSuccessor(successor: Node) {
@@ -263,33 +258,13 @@ class RingImpl /* testing */ constructor(
         }
     }
 
-    override fun getRandomNodes(): List<Node> {
-        if (membershipList.nodes.size < 4) {
-            return membershipList.nodes
-        }
-
-        val random = Random()
-
-        val nodes = mutableSetOf<Node>()
-        while (nodes.size != 3) {
-            val i = random.nextInt(membershipList.nodes.size)
-            nodes.add(membershipList.nodes[i])
-        }
-
-        return nodes.toList()
-    }
-
     override fun processFileRemove(channel: ReadFsCommandChannel): Boolean {
         val removeCommand: FsCommand.FsRemove = channel.readTyped() ?: return false
-        logger.info(tag, "Received $removeCommand")
-
-        fileSystem.removeFile(removeCommand.remoteFile)
-
         val action = Action.FileSystemAction.RemoveFile(removeCommand.remoteFile, self)
-        pendingSuccessorActions.values.forEach { list ->
-            list.add(action)
-        }
 
+        logger.info(tag, "Received $removeCommand")
+        processFileSystemAction(action)
+        pendingSuccessorActions.values.forEach { it.add(action) }
         return true
     }
 

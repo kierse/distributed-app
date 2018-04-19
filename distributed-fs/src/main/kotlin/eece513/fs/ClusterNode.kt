@@ -487,7 +487,7 @@ class ClusterNode(
                                 try {
                                     ring.sendActionsToSuccessor(successor, key.attachment() as BufferedSendActionChannel)
                                 } catch (e: IOException) {
-                                    logger.warn(tag, "error writing to $successor")
+                                    logger.warn(tag, "error writing to $successor: $e")
                                 }
 
                                 if (shouldILeaveRing) {

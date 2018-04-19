@@ -38,7 +38,7 @@ class FileSystem(private val logger: Logger) {
                     }
                     .forEach { file ->
                         // Note: assuming we are the file owner here
-                        logger.debug(tag, "removing file: ${file.name}")
+                        logger.debug(tag, "removing file: $FILE_SYSTEM_PATH/${file.name}")
                         file.delete()
                     }
         }
