@@ -110,6 +110,7 @@ SSH_KEY_RENAME="
         cat server-to-server.pub >> authorized_keys; \
     fi; \
     rm server-to-server.pub;
+    chmod 600 server-to-server;
 "
 
 while IFS= read url
