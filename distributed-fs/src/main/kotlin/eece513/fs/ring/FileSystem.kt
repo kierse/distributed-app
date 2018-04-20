@@ -22,13 +22,11 @@ class FileSystem(private val logger: Logger) {
 
         // make sure filesystem is empty
         // NOTE: this will also delete the servers.txt file!!
-// TODO
-//        File(FILE_SYSTEM_PATH)
-//                .listFiles()
-//                .forEach { file ->
-//                    file.delete()
-//                }
-// TODO
+        File(FILE_SYSTEM_PATH)
+                .listFiles()
+                .forEach { file ->
+                    file.delete()
+                }
     }
 
     fun removeFile(remoteName: String) {
