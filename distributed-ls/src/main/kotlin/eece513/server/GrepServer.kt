@@ -1,6 +1,8 @@
 package eece513.server
 
 import eece513.*
+import eece513.common.Logger
+import eece513.common.TinyLogWrapper
 
 /**
  * Instances of this class can be used to respond to searches from client.

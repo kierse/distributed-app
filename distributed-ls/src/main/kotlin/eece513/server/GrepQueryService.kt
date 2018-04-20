@@ -1,9 +1,12 @@
 package eece513.server
 
 import eece513.LOCATE_CMD
-import eece513.Logger
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import eece513.LS_CMD
+import eece513.common.Logger
+import eece513.common.FILE_SYSTEM_SEPARATOR
+import eece513.common.util.getLatestVersion
+import eece513.common.util.getLocalFiles
+import eece513.common.util.unescapeFileName
 
 /**
  * Wrap UNIX grep in the [GrepServer.QueryService] interface. This class
@@ -21,56 +24,25 @@ class GrepQueryService(
     override fun search(
             args: Array<String>, onResult: (String) -> Unit, onError: (Array<String>) -> Unit
     ) {
-        if (args.first() == LOCATE_CMD) {
-            Runtime.getRuntime().exec("sudo updatedb")
-        }
+        val (instruction: String, instructionArg: String) = args.first().split(":")
 
-        val argsList = arrayOf(*args)
-        logger.debug(tag, "grep cmd: {}", argsList.joinToString(" "))
-
-        var esr: InputStreamReader? = null
-        var isr: InputStreamReader? = null
-
-        var ebr: BufferedReader? = null
-        var ibr: BufferedReader? = null
-
-        try {
-            val proc = ProcessBuilder(*argsList).start()
-            var responseInProgress = false
-
-            esr = InputStreamReader(proc.errorStream)
-            ebr = BufferedReader(esr)
-
-            isr = InputStreamReader(proc.inputStream)
-            ibr = BufferedReader(isr)
-
-
-            if (ebr.ready()) {
-                // when "locate" doesn't find match, it returns 1
-                if (ebr.readLine() != "1" && args.first() != LOCATE_CMD) {
-                    onError.invoke(ebr.readLines().toTypedArray())
-                    return
+        val results = when (instruction) {
+            LS_CMD -> {
+                getLocalFiles().map { file ->
+                    unescapeFileName(file.name.substringBeforeLast(FILE_SYSTEM_SEPARATOR))
                 }
             }
 
-            val result = mutableListOf<String>()
-            while (true) {
-                val line = ibr.readLine() ?: break
-                responseInProgress = true
-                result.add(line)
-            }
-            if (responseInProgress) {
-                responseInProgress = false
-                onResult.invoke(result.joinToString(", "))
+            LOCATE_CMD -> {
+                listOf(if (getLatestVersion(instructionArg) == null) "0" else "1")
             }
 
-            logger.debug(tag, "no more results!")
-        } finally {
-            esr?.close()
-            isr?.close()
-
-            ebr?.close()
-            ibr?.close()
+            else -> throw IllegalArgumentException("unknown/unrecognized instruction: $instruction")
         }
+
+        results.forEach { result ->
+            onResult.invoke(result)
+        }
+
     }
 }

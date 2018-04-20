@@ -1,6 +1,6 @@
 package eece513.client
 
-import eece513.Logger
+import eece513.common.Logger
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -45,13 +45,7 @@ class QueryImpl(
         val osw = OutputStreamWriter(socket.getOutputStream())
         val bw = BufferedWriter(osw)
 
-        // send query args, one-by-one
-        logger.debug(tag, "sending ${args.size} args...")
-
-        for (arg in args) {
-            logger.debug(tag, "arg: $arg")
-            bw.write("$arg\n")
-        }
+        bw.write(args.joinToString(":"))
         bw.flush()
 
         // indicate no more data

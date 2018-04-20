@@ -1,6 +1,6 @@
 package eece513.client
 
-import eece513.Logger
+import eece513.common.Logger
 import java.net.InetAddress
 
 /**

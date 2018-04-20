@@ -8,6 +8,7 @@ import eece513.common.model.FsCommand
 import eece513.common.model.FsResponse
 import eece513.fs.model.MembershipList
 import eece513.common.model.Node
+import eece513.common.util.getLatestVersion
 import eece513.fs.util.SuccessorSentActions
 import kotlinx.coroutines.experimental.channels.SendChannel
 import java.time.Instant
@@ -276,7 +277,7 @@ class RingImpl /* testing */ constructor(
         val getCommand: FsCommand.FsGet = channel.readTyped() ?: return null
         logger.info(tag, "Received $getCommand")
 
-        val file = fileSystem.getLatestVersion(getCommand.remoteFile)
+        val file = getLatestVersion(getCommand.remoteFile)
         if (file == null) {
             logger.warn(tag, "Unable to find ${getCommand.remoteFile}")
             return FsResponse.UnknownFile()

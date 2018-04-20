@@ -1,12 +1,13 @@
 package eece513.client
 
 import eece513.*
-import eece513.common.FILE_SYSTEM_PATH
 import eece513.common.FILE_SYSTEM_SEPARATOR
+import eece513.common.Logger
 import eece513.common.SERVERS_FILE_PATH
+import eece513.common.TinyLogWrapper
 import eece513.common.util.FileIO
+import eece513.common.util.getLocalFiles
 import eece513.common.util.unescapeFileName
-import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
 
@@ -18,14 +19,16 @@ class GrepClient(
 ) {
     interface Presenter {
         fun displayResponse(response: Server.Response)
-        fun displayMachinesOnly(response: Server.Response)
         fun displayHelp(msg: String)
     }
 
     interface Server {
         sealed class Response {
-            data class Result(val name: String, val result: List<String>) : Response()
-            data class Error(val name: String, val result: List<String>) : Response()
+            abstract val name: String
+            abstract val result: List<String>
+            
+            data class Result(override val name: String, override val result: List<String>) : Response()
+            data class Error(override val name: String, override val result: List<String>) : Response()
         }
 
         interface Query {
@@ -46,8 +49,8 @@ class GrepClient(
 
         @JvmStatic
         fun main(args: Array<String>) {
-            val presenter = PrintStreamPresenter(System.out, System.err)
             val logger = TinyLogWrapper(CLIENT_LOG_LOCATION)
+            val presenter = PrintStreamPresenter(System.out, System.err, logger)
             val helpGenerator = GrepHelpGenerator(GREP_CMD, logger)
 
             val servers = FileIO().ReadLinesAsInetAddress(SERVERS_FILE_PATH).map { address ->
@@ -64,36 +67,47 @@ class GrepClient(
     }
 
     fun search(args: Array<String>) {
-        if (args.first() == LSHERE_CMD) {
-            getLocalFiles()
+        logger.info(tag, "args: [{}]", args.joinToString(", "))
+
+        when (args.first()) {
+            LSHERE_CMD -> getLocalFiles()
                     .forEach { file ->
                         println(unescapeFileName(file.name.substringBeforeLast(FILE_SYSTEM_SEPARATOR)))
                     }
 
-        } else if (args.first() == LS_CMD || args.first() == LOCATE_CMD) {
-            val queue: ConcurrentLinkedQueue<Server.Response> = ConcurrentLinkedQueue()
-            logger.info(tag, "args: [{}]", args.joinToString(", "))
-            var queries: List<Server.Query> = servers.map { server ->
-                logger.debug(tag, "searching ${server.name}...")
-                server.search(args) { response ->
-                    logger.debug(tag, "response: {}", response)
-                    queue.add(response)
-                }
+            LOCATE_CMD -> processQueries(servers, LOCATE_CMD, args[1]) { response ->
+                if (response.result.first() == "1") GrepClient.Server.Response.Result(response.name, listOf(response.name))
+                else null
             }
-            while (queries.isNotEmpty()) {
-                while (true) {
-                    val result = queue.poll() ?: break
-                    if (args.first() == LOCATE_CMD) {
-                        presenter.displayMachinesOnly(result)
-                    } else {
-                        presenter.displayResponse(result)
-                    }
-                }
-                queries = filterQueries(queries)
+
+            LS_CMD -> processQueries(servers.subList(0, 1), LS_CMD)
+
+            else -> presenter.displayHelp(helpGenerator.getHelpMessage())
+        }
+    }
+
+    private fun processQueries(
+            servers: List<Server>, cmd: String, arg: String = "", onResult: ((Server.Response) -> Server.Response?)? = null
+    ) {
+        val queue: ConcurrentLinkedQueue<Server.Response> = ConcurrentLinkedQueue()
+
+        var queries = servers.map { server ->
+            logger.debug(tag, "searching ${server.name}...")
+            server.search(arrayOf(cmd, arg)) { response ->
+                logger.debug(tag, "response: {}", response)
+
+                val result = if (onResult == null) response else onResult(response)
+                if (result != null)  queue.add(result)
             }
-        } else {
-            presenter.displayHelp(helpGenerator.getHelpMessage())
-            return
+        }
+
+        while (queries.isNotEmpty() || queue.isNotEmpty()) {
+            while (true) {
+                val result = queue.poll() ?: break
+                logger.debug(tag, "printing: $result")
+                presenter.displayResponse(result)
+            }
+            queries = filterQueries(queries)
         }
     }
 
@@ -101,17 +115,5 @@ class GrepClient(
         return queries.filterNot { query ->
             query.isComplete()
         }
-    }
-
-    private fun getLocalFiles(): List<File> {
-        val fileNames = mutableSetOf<String>()
-
-        return File(FILE_SYSTEM_PATH)
-                .listFiles()
-                .sortedBy { it.name }
-                .reversed()
-                .filter { file ->
-                    fileNames.add(file.name)
-                }
     }
 }

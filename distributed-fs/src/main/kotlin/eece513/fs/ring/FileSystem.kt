@@ -46,17 +46,6 @@ class FileSystem(private val logger: Logger) {
         }
     }
 
-    fun getLatestVersion(remoteName: String): File? {
-        return File(FILE_SYSTEM_PATH)
-                .listFiles()
-                .filter { file ->
-                    file.name.startsWith(escapeFileName(remoteName))
-                }
-                .sortedBy { it.name }
-                .lastOrNull()
-
-    }
-
     fun clientShouldPromptUser(remoteName: String, timestamp: Instant): Boolean {
         val filenames = remoteFileToTimestamp.getOrDefault(remoteName, emptyList<String>())
         for (filename in filenames.reversed()) {

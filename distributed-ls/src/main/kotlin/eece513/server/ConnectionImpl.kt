@@ -1,6 +1,6 @@
 package eece513.server
 
-import eece513.Logger
+import eece513.common.Logger
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader

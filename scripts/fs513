@@ -59,10 +59,15 @@ case $1 in
 
     locate)
         remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
+        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1 $remoteFileName
         ;;
 
     lshere)
-        java -cp distributed-ls-1.0.jar eece513.client.GrepClient "$1"
+        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1
+        ;;
+
+    ls)
+        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1
         ;;
 
     --help)

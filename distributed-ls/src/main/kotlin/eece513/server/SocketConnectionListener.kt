@@ -1,6 +1,6 @@
 package eece513.server
 
-import eece513.Logger
+import eece513.common.Logger
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicBoolean
 
