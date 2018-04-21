@@ -1,6 +1,6 @@
 package eece513.fs.channel
 
-import eece513.fs.MESSAGE_HEADER_SIZE
+import eece513.common.MESSAGE_HEADER_SIZE
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.channels.Channels

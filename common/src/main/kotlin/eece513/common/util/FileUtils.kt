@@ -1,6 +1,7 @@
 package eece513.common.util
 
 import eece513.common.FILE_SYSTEM_PATH
+import eece513.common.FILE_SYSTEM_SEPARATOR
 import java.io.File
 
 fun unescapeFileName(escapedName: String): String {
@@ -11,15 +12,16 @@ fun escapeFileName(name: String): String {
     return name.replace("/", "+")
 }
 
-fun getLocalFiles(): List<File> {
+fun getLocalFiles(): List<String> {
     val fileNames = mutableSetOf<String>()
 
     return File(FILE_SYSTEM_PATH)
             .listFiles()
-            .sortedBy { it.name }
-            .reversed()
-            .filter { file ->
-                fileNames.add(file.name)
+            .map { file ->
+                unescapeFileName(file.name.substringBeforeLast(FILE_SYSTEM_SEPARATOR))
+            }
+            .filter { name ->
+                fileNames.add(name)
             }
 }
 

@@ -1,8 +1,6 @@
 package eece513.fs
 
-import eece513.common.CONNECTION_PORT
-import eece513.common.Logger
-import eece513.common.TinyLogWrapper
+import eece513.common.*
 import eece513.common.mapper.ConnectionPurposeMapper
 import eece513.fs.channel.*
 import eece513.fs.mapper.*
@@ -23,7 +21,7 @@ import java.util.*
 import kotlin.concurrent.scheduleAtFixedRate
 
 fun main(args: Array<String>) {
-//    val logger = TinyLogWrapper(LOG_LOCATION)
+//    val logger = TinyLogWrapper(FS_LOG_LOCATION)
     val logger = TinyLogWrapper()
 
     val localAddr = InetAddress.getLocalHost()
@@ -31,7 +29,7 @@ fun main(args: Array<String>) {
     val socketAddr: InetSocketAddress = ServerSocket(0).use { InetSocketAddress(localAddr, it.localPort) }
     val self = Node(socketAddr, Instant.now())
 
-    val fileSystem = FileSystem(logger)
+    val fileSystem = FileSystem(FILE_SYSTEM_PATH, SERVERS_FILE_PATH, logger)
 
     val heartbeatCoroutineChannel = Channel<PredecessorHeartbeatMonitorController.Heartbeat>(3)
     val ring = RingImpl(self, fileSystem, heartbeatCoroutineChannel, logger)

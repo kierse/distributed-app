@@ -5,11 +5,11 @@ import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Implementation of [GrepServer.ConnectionListener] that uses a SocketServer internally.
+ * Implementation of [Server.ConnectionListener] that uses a SocketServer internally.
  */
 class SocketConnectionListener internal constructor(
         private val port: Int, private val logger: Logger, private val loop: AtomicBoolean
-) : GrepServer.ConnectionListener {
+) : Server.ConnectionListener {
     private val tag = SocketConnectionListener::class.java.simpleName
 
     constructor(port: Int, logger: Logger) : this(port, logger, AtomicBoolean(true))
@@ -18,7 +18,7 @@ class SocketConnectionListener internal constructor(
      * When called, this method starts listening for incoming connections on the given port.
      * When a connection terminates, it starts listening for new incoming connections.
      */
-    override fun listen(onQuery: (GrepServer.ConnectionListener.Connection) -> Unit) {
+    override fun listen(onQuery: (Server.ConnectionListener.Connection) -> Unit) {
         ServerSocket(port).use { serverSocket ->
             // bind to port
             logger.debug(tag, "binding to port: $port")

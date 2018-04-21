@@ -1,10 +1,10 @@
-import eece513.client.GrepClient
+import eece513.client.Client
 
-class ResultCounterPresenter : GrepClient.Presenter {
+class ResultCounterPresenter : Client.Presenter {
     internal var count = 0
         private set
 
-    override fun displayResponse(response: GrepClient.Server.Response) {
+    override fun displayResponse(response: Client.Server.Response) {
         count++
     }
 

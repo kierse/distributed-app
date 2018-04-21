@@ -7,7 +7,7 @@ import java.io.InputStreamReader
 /**
  * Instances of this class run `grep --help` and return the results
  */
-class GrepHelpGenerator(private val cmd: String, private val logger: Logger) : GrepClient.HelpGenerator {
+class GrepHelpGenerator(private val cmd: String, private val logger: Logger) : Client.HelpGenerator {
     private val tag = GrepHelpGenerator::class.java.simpleName
 
     override fun getHelpMessage(): String {

@@ -1,3 +1,6 @@
+package eece513.client
+
+import eece513.ARGS_SEPARATOR
 import eece513.DummyLogger
 import org.junit.Test
 
@@ -36,14 +39,14 @@ class QueryImplTest {
                 val isr = InputStreamReader(socket.inputStream)
                 val br = BufferedReader(isr)
 
-                assertArrayEquals(br.readLines().toTypedArray(), args)
+                assertArrayEquals(br.readLine().split(ARGS_SEPARATOR).toTypedArray(), args)
             }
         }
     }
 
     @Test
     fun run__receive_single_line_result() {
-        val expected = GrepClient.Server.Response.Result("id", listOf("foo bar baz"))
+        val expected = Client.Server.Response.Result("id", listOf("foo bar baz"))
 
         thread {
             ServerSocket(port).use { ss ->
@@ -69,7 +72,7 @@ class QueryImplTest {
 
     @Test
     fun run__receive_multi_line_result() {
-        val expected = GrepClient.Server.Response.Result("id", listOf("foo", "bar", "baz"))
+        val expected = Client.Server.Response.Result("id", listOf("foo", "bar", "baz"))
 
         thread {
             ServerSocket(port).use { ss ->
@@ -95,7 +98,7 @@ class QueryImplTest {
 
     @Test
     fun run__receive_single_line_error() {
-        val expected = GrepClient.Server.Response.Error("id", listOf("foo bar baz"))
+        val expected = Client.Server.Response.Error("id", listOf("foo bar baz"))
 
         thread {
             ServerSocket(port).use { ss ->
@@ -121,7 +124,7 @@ class QueryImplTest {
 
     @Test
     fun run__receive_multi_line_error() {
-        val expected = GrepClient.Server.Response.Error("id", listOf("foo", "bar", "baz"))
+        val expected = Client.Server.Response.Error("id", listOf("foo", "bar", "baz"))
 
         thread {
             ServerSocket(port).use { ss ->
@@ -148,7 +151,7 @@ class QueryImplTest {
     @Test
     fun run__connection_error() {
         QueryImpl(ip, port, "id", arrayOf(), DummyLogger()) { response ->
-            assertEquals(response, GrepClient.Server.Response.Error("id", listOf("Server Unreachable")))
+            assertEquals(response, Client.Server.Response.Error("id", listOf("Server Unreachable")))
         }.run()
     }
 
@@ -170,7 +173,7 @@ class QueryImplTest {
 
         QueryImpl(ip, port, "id", arrayOf(), DummyLogger()) { response ->
             latch.countDown()
-            assertEquals(response, GrepClient.Server.Response.Error("id", listOf("Server Unreachable")))
+            assertEquals(response, Client.Server.Response.Error("id", listOf("Server Unreachable")))
         }.run(socket)
 
         latch.await(1, TimeUnit.SECONDS)
@@ -178,7 +181,7 @@ class QueryImplTest {
 
     @Test
     fun isComplete() {
-        val expected = GrepClient.Server.Response.Result("id", listOf("foo"))
+        val expected = Client.Server.Response.Result("id", listOf("foo"))
 
         thread {
             ServerSocket(port).use { ss ->

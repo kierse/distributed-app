@@ -1,3 +1,5 @@
+package eece513.client
+
 import eece513.DummyLogger
 import eece513.GREP_CMD
 import org.junit.Test

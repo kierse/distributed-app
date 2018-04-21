@@ -8,7 +8,7 @@ import java.util.*
 class SuccessorSentActions internal constructor(
         private val actions: LinkedList<Action>, private val size: Int, private val logger: Logger
 ) {
-    constructor(size: Int = SUCCESSOR_SENT_ACTIONS_LIMIT, logger: Logger) : this(LinkedList(), size, logger)
+    constructor(logger: Logger, size: Int = SUCCESSOR_SENT_ACTIONS_LIMIT) : this(LinkedList(), size, logger)
 
     fun add(action: Action) {
         if (actions.size >= size) {

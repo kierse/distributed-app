@@ -1,5 +1,6 @@
 package eece513.server
 
+import eece513.ARGS_SEPARATOR
 import eece513.common.Logger
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -11,7 +12,7 @@ import java.net.Socket
  * This class wraps a [java.net.Socket] and implements methods that expose
  * input ([getQueryArgs]) and output ([sendResult] / [sendError])
  */
-class ConnectionImpl(socket: Socket, private val logger: Logger) : GrepServer.ConnectionListener.Connection {
+class ConnectionImpl(socket: Socket, private val logger: Logger) : Server.ConnectionListener.Connection {
     private val tag = ConnectionImpl::class.java.simpleName
 
     private val br: BufferedReader
@@ -30,7 +31,7 @@ class ConnectionImpl(socket: Socket, private val logger: Logger) : GrepServer.Co
         while (true) {
             val arg = br.readLine() ?: break
             logger.debug(tag, "arg: $arg")
-            args.add(arg)
+            args.addAll(arg.split(ARGS_SEPARATOR))
         }
 
         logger.debug(tag, "received ${args.size} args...")

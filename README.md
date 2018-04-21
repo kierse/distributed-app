@@ -3,64 +3,90 @@
 Attention: for Windows users, replace `gradlew` with `gradlew.bat`
 
 ## How to Use ##
-1. Set up EC2 instance and pull from master
-2. Update instances to [Java 9](#markdown-header-to-install-java9) if required
-3. Create a "Server.txt" file in the project root with Public DNS addresses of each EC2 instance
-4. Initialize the instance with the following command:
-    ```
-    > ./script/deploymentScript /Users/kierse/.ssh/eece513_aws.pem --ssh-keys
-    ```
-5. Run the following command to build and deploy:<br />
-_Note: this will build and deploy fs513 and the grep service_
-    ```
-    > ./gradlew bootstrapAws -Ppem=/Users/kierse/.ssh/eece513_aws.pem
-    ```
-6. In any EC2 instance home directory, start a cluster node:
-    ```
-    > java -jar distributed-app-1.0.jar
-    ```
-7. On startup, the node will print out its join address. This address can be used by other nodes wishing to join its cluster:
-    ````
-    > java -jar distributed-app-1.0.jar 127.0.0.1
-    ````
-Note: starting a node without the address of an existing cluster will effectively create a second cluster.
+- Set up EC2 instance and pull from master
+- Update instances to [Java 9](#markdown-header-to-install-java9) if required
+- Create a "server.txt" file in the project root with Public DNS addresses of each EC2 instance
+- Initialize the instances with the following command:
 
-## To grep node logs ##
-7. Follow instructions found [here](https://bitbucket.org/eece513/distributed-grep) and install distributed-grep on each EC2 instance.
-
-Note: will need to be running code 'Assignment02' tag or later
-
-## Auxiliary Commands ##
-
-### Delete Artifacts ###
+_Note: substitute first argument with path to actual pem file_
 ```
- > ./gradlew clean 
+> ./script/deploymentScript /Users/kierse/.ssh/eece513_aws.pem --ssh-keys
+```
+- Run the following command to build and deploy:
+
+_Note: substitute populate pem flag with path to actual file_
+```
+> ./gradlew bootstrapAws -Ppem=/Users/kierse/.ssh/eece513_aws.pem
+```
+- In any EC2 instance home directory, start a cluster node:
+```
+> java -jar distributed-app-1.0.jar
+```
+- On startup, the node will print out its join address. This address can be used by other nodes wishing to join its cluster:
+
+_Note: replace 127.0.0.1 with the join address obtained in the previous step_
+```
+> java -jar distributed-app-1.0.jar 127.0.0.1
 ```
 
-### Build Archive (.jar) ###
+**_Warning: starting a node without the address of an existing cluster will effectively create a second cluster._**
 
+## fs513 ##
+fs513 is a command line script that can be used to interact with the distributed filesystem.
 ```
- > ./gradlew jar
+usage: ./fs513 <action> [<option1> <option2>]
+
+ Actions:
+    put <localFileName> <remoteFileName>  (add a local file to fs513 with the given fs513 name)
+    get <remoteFileName> <localFileName>  (fetch a fs513 file to the local machine)
+    remove <remoteFileName>               (delete a file from fs513)
+
+    grep [<arg1> <arg2> ... <argN>]       (search the fs513 server logs)
+    locate <remoteFileName>               (list all machines (name / id / IP address) of the servers that contain a copy of the file)
+    ls                                    (list all files in fs513)
+    lshere                                (list all fs513 files stored on the local machine)
+
+    --help                                (print this message)
+```
+### Supported fs513 commands ###
+##### add file #####
+```
+./fs513 put foo.txt foo/bar/baz
+```
+##### get file #####
+```
+./fs513 get foo/bar/baz foo.txt
+```
+##### remove file #####
+```
+./fs513 remove foo/bar/baz
+```
+##### grep server logs #####
+```
+./fs513 grep -i "no files to sync""
+```
+##### locate file #####
+```
+./fs513 locate foo/bar/baz
+```
+##### list files in filesystem #####
+```
+./fs513 ls
+```
+##### list files on current machine #####
+```
+./fs513 lshere
 ```
 
-#### Runs Distributed Tests ####
-```
- > ./gradlew distributedTest
-```
+## Tests ##
 
-#### Runs Unit Tests ####
+#### Unit Tests ####
 ```
  > ./gradlew test
 ```
-## SETUP LOCATE COMMAND ###
-### To install Locate ###
+#### Distributed Tests ####
 ```
-> sudo yum install mlocate
-> sudo updatedb
-```
-### To make locat.db visible ###
-```
-> updatedb --require-visibility 0 -o ~/.locate.db
+ > ./gradlew distributedTest
 ```
 
 ## UPGRADE FROM JAVA7/8 TO JAVA9 ###

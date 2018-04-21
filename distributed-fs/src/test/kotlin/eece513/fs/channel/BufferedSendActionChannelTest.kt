@@ -3,7 +3,7 @@ package eece513.fs.channel
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.mock
 import com.nhaarman.mockito_kotlin.whenever
-import eece513.fs.MESSAGE_HEADER_SIZE
+import eece513.common.MESSAGE_HEADER_SIZE
 import eece513.fs.mapper.ClusterActionMapper
 import eece513.fs.message.SendableMessageFactory
 import eece513.common.model.Action

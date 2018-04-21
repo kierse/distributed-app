@@ -7,7 +7,7 @@ const val LS_CMD = "ls"
 const val LSHERE_CMD = "lshere"
 const val LOCATE_CMD = "locate"
 
-const val SERVER_LOG_LOCATION = "logs/grep-server.log"
-const val CLIENT_LOG_LOCATION = "logs/grep-client.log"
-const val FS513_DIR = "~/"
+const val SERVER_LOG_LOCATION = "logs/server.log"
+const val CLIENT_LOG_LOCATION = "logs/client.log"
 
+const val ARGS_SEPARATOR = ":"

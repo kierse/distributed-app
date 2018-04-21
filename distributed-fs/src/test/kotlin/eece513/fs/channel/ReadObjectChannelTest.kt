@@ -3,10 +3,10 @@ package eece513.fs.channel
 import com.nhaarman.mockito_kotlin.mock
 import com.nhaarman.mockito_kotlin.whenever
 import eece513.common.model.Action
-import eece513.fs.DummyLogger
 import eece513.fs.mapper.ClusterActionMapper
 import eece513.fs.message.ReadableMessageFactory
 import eece513.common.model.Node
+import eece513.fs.DummyLogger
 import org.junit.Test
 
 import org.junit.Assert.*

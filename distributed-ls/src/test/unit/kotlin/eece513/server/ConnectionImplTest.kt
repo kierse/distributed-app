@@ -1,3 +1,5 @@
+package eece513.server
+
 import eece513.DummyLogger
 import org.junit.Assert.*
 import org.junit.Test
@@ -9,7 +11,6 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 class ConnectionImplTest {

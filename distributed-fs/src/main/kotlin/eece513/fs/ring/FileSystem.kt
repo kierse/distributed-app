@@ -11,20 +11,29 @@ import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.time.Instant
 
-class FileSystem(private val logger: Logger) {
+class FileSystem internal /* for testing */ constructor(
+        private val path: String,
+        private val serversPath: String,
+        private val logger: Logger,
+        startingData: MutableMap<String, MutableList<String>>
+) {
     private val tag = FileSystem::class.java.simpleName
 
-    private val remoteFileToTimestamp = mutableMapOf<String, MutableList<String>>()
+    private val remoteFileToTimestamp = startingData
+
+    constructor(path: String, serversPath: String, logger: Logger): this(
+            path, serversPath, logger, mutableMapOf<String, MutableList<String>>()
+    )
 
     fun initialize(selfAddress: String) {
         saveAddressListToDisk(listOf(selfAddress))
 
         // make sure filesystem directory exists
-        File(FILE_SYSTEM_PATH).mkdirs()
+        File(path).mkdirs()
 
         // make sure filesystem is empty
         // NOTE: this will also delete the servers.txt file!!
-        File(FILE_SYSTEM_PATH)
+        File(path)
                 .listFiles()
                 .forEach { file ->
                     file.delete()
@@ -33,14 +42,14 @@ class FileSystem(private val logger: Logger) {
 
     fun removeFile(remoteName: String) {
         launch(CommonPool) {
-            File(FILE_SYSTEM_PATH)
+            File(path)
                     .listFiles()
                     .filter { file ->
                         file.name.startsWith(escapeFileName(remoteName))
                     }
                     .forEach { file ->
                         // Note: assuming we are the file owner here
-                        logger.debug(tag, "removing file: $FILE_SYSTEM_PATH/${file.name}")
+                        logger.debug(tag, "removing file: $path/${file.name}")
                         file.delete()
                     }
         }
@@ -76,7 +85,7 @@ class FileSystem(private val logger: Logger) {
     }
 
     fun buildEncodedFileName(remoteFileName: String, timestamp: Instant): File {
-        return File(FILE_SYSTEM_PATH + "/${escapeFileName(remoteFileName)}$FILE_SYSTEM_SEPARATOR${timestamp.toEpochMilli()}")
+        return File("$path/${escapeFileName(remoteFileName)}$FILE_SYSTEM_SEPARATOR${timestamp.toEpochMilli()}")
     }
 
     private fun decodeHumanReadableFileName(pathToFile: String): String {
@@ -101,7 +110,7 @@ class FileSystem(private val logger: Logger) {
     fun syncFiles(source: InetSocketAddress) {
         launch(CommonPool) {
             val remoteAddress = source.hostName
-            val lsCmd = arrayOf("ssh", "-i", PRIVATE_KEY_PATH, "$SSH_USER@$remoteAddress", "ls", "-1r", FILE_SYSTEM_PATH)
+            val lsCmd = arrayOf("ssh", "-i", PRIVATE_KEY_PATH, "$SSH_USER@$remoteAddress", "ls", "-1r", path)
 
             val lsProc = ProcessBuilder(*lsCmd).start()
 
@@ -133,10 +142,8 @@ class FileSystem(private val logger: Logger) {
             }
 
             val copyCmd = arrayOf(
-                    "rsync", "--files-from", tmpFile.absolutePath, "-e", "ssh -i $PRIVATE_KEY_PATH", "$SSH_USER@$remoteAddress:$FILE_SYSTEM_PATH/", "$FILE_SYSTEM_PATH/"
+                    "rsync", "--files-from", tmpFile.absolutePath, "-e", "ssh -i $PRIVATE_KEY_PATH", "$SSH_USER@$remoteAddress:$path/", "$path/"
             )
-
-            tmpFile.delete()
 
             logger.debug(tag, copyCmd.joinToString(" "))
 
@@ -146,13 +153,16 @@ class FileSystem(private val logger: Logger) {
             proc.waitFor()
 
             if (proc.exitValue() > 0) {
-                BufferedReader(InputStreamReader(lsProc.errorStream)).use { reader ->
+                BufferedReader(InputStreamReader(proc.errorStream)).use { reader ->
                     logger.warn(tag, "Errors while syncing files: ${reader.readLines().joinToString("\n")}")
                 }
             } else {
-                val files = File(FILE_SYSTEM_PATH)
+                val files = File(path)
                 logger.info(tag, "copied '${files.list().size}' files from $remoteAddress")
             }
+
+            // cleanup
+            tmpFile.delete()
         }
     }
 
@@ -160,7 +170,7 @@ class FileSystem(private val logger: Logger) {
         launch(CommonPool) {
             // Write given list of addresses to disk
             // Note: existing servers file will be overwritten if present
-            File(SERVERS_FILE_PATH).writeText(addresses.joinToString("\n") + "\n")
+            File(serversPath).writeText(addresses.joinToString("\n") + "\n")
         }
     }
 }

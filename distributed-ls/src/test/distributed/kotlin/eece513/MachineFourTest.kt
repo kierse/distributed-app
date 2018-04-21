@@ -1,9 +1,9 @@
 import com.nhaarman.mockito_kotlin.mock
-import eece513.client.FileIO
-import eece513.client.GrepClient
+import eece513.SERVER_PORT
+import eece513.client.Client
 import eece513.client.ServerImpl
-import eece513.helper.ResultCounterPresenter
-import eece513.helper.pathToAssets
+import eece513.common.TinyLogWrapper
+import eece513.common.util.FileIO
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -20,8 +20,8 @@ class MachineFourTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("-i", "-e", "scooby", "-e", "dooby", "-e", "doo"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("-i", "-e", "scooby", "-e", "dooby", "-e", "doo"))
 
         assertEquals(3, presenter.count)
     }
@@ -36,8 +36,8 @@ class MachineFourTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("-e", "sCoOby", "-e", "doobY", "-e", "DOO"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("-e", "sCoOby", "-e", "doobY", "-e", "DOO"))
 
         assertEquals(3, presenter.count)
     }

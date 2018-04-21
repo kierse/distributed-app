@@ -129,7 +129,7 @@ do
         echo "attempting to kill running node..."
         ssh -i "$pem" ec2-user@"$url" 'pkill -9 -f distributed-fs-1.0.jar' < /dev/null
 
-        # distributed-fs jar file
+        # scripts
         if [ ! -z "$scripts" ] || [ ! -z "$all" ]; then
             echo "copying command line scripts..."
             scp -i "$pem" "$ls_name"/scripts/startClient ec2-user@"$url":/home/ec2-user < /dev/null

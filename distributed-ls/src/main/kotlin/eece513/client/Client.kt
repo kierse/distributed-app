@@ -1,17 +1,14 @@
 package eece513.client
 
 import eece513.*
-import eece513.common.FILE_SYSTEM_SEPARATOR
-import eece513.common.Logger
-import eece513.common.SERVERS_FILE_PATH
-import eece513.common.TinyLogWrapper
+import eece513.common.*
 import eece513.common.util.FileIO
 import eece513.common.util.getLocalFiles
 import eece513.common.util.unescapeFileName
 import java.util.concurrent.ConcurrentLinkedQueue
 
 
-class GrepClient(
+class Client(
         private val presenter: Presenter,
         private val helpGenerator: HelpGenerator,
         private val logger: Logger,
@@ -37,7 +34,7 @@ class GrepClient(
 
         val name: String
 
-        fun search(args: Array<String>, onResult: (Response) -> Unit): Query
+        fun execute(args: Array<String>, onResult: (Response) -> Unit): Query
     }
 
     interface HelpGenerator {
@@ -45,7 +42,7 @@ class GrepClient(
     }
 
     companion object {
-        private val tag: String = GrepClient::class.java.simpleName
+        private val tag: String = Client::class.java.simpleName
 
         @JvmStatic
         fun main(args: Array<String>) {
@@ -57,8 +54,8 @@ class GrepClient(
                 ServerImpl(address, SERVER_PORT, address.hostAddress, logger)
             }
 
-            GrepClient(presenter, helpGenerator, logger, servers)
-                    .search(args)
+            Client(presenter, helpGenerator, logger, servers)
+                    .execute(args)
         }
     }
 
@@ -66,38 +63,41 @@ class GrepClient(
         if (servers.isEmpty()) throw IllegalArgumentException("must provide at least one server!")
     }
 
-    fun search(args: Array<String>) {
+    fun execute(args: Array<String>) {
         logger.info(tag, "args: [{}]", args.joinToString(", "))
 
-        when (args.first()) {
-            LSHERE_CMD -> getLocalFiles()
-                    .forEach { file ->
-                        println(unescapeFileName(file.name.substringBeforeLast(FILE_SYSTEM_SEPARATOR)))
-                    }
+        when (args.firstOrNull()) {
+            LSHERE_CMD -> getLocalFiles().forEach(::println)
 
-            LOCATE_CMD -> processQueries(servers, LOCATE_CMD, args[1]) { response ->
-                if (response.result.first() == "1") GrepClient.Server.Response.Result(response.name, listOf(response.name))
+            LOCATE_CMD -> processQueries(servers, args) { response ->
+                if (response.result.first() == "1") Client.Server.Response.Result("", listOf(response.name))
                 else null
             }
 
-            LS_CMD -> processQueries(servers.subList(0, 1), LS_CMD)
+            LS_CMD -> processQueries(servers.subList(0, 1), arrayOf(LS_CMD, "")) { response ->
+                Client.Server.Response.Result("", response.result)
+            }
+
+            GREP_CMD -> processQueries(servers, args)
 
             else -> presenter.displayHelp(helpGenerator.getHelpMessage())
         }
     }
 
     private fun processQueries(
-            servers: List<Server>, cmd: String, arg: String = "", onResult: ((Server.Response) -> Server.Response?)? = null
+            servers: List<Server>,
+            args: Array<String>,
+            resultMapper: (Server.Response) -> Server.Response? = { it }
     ) {
         val queue: ConcurrentLinkedQueue<Server.Response> = ConcurrentLinkedQueue()
 
         var queries = servers.map { server ->
             logger.debug(tag, "searching ${server.name}...")
-            server.search(arrayOf(cmd, arg)) { response ->
+            server.execute(args) { response ->
                 logger.debug(tag, "response: {}", response)
 
-                val result = if (onResult == null) response else onResult(response)
-                if (result != null)  queue.add(result)
+                resultMapper(response)
+                        ?.let { queue.add(it) }
             }
         }
 

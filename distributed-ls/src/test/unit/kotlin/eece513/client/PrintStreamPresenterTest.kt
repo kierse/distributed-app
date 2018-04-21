@@ -1,3 +1,6 @@
+package eece513.client
+
+import eece513.DummyLogger
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -7,11 +10,11 @@ import java.io.PrintStream
 class PrintStreamPresenterTest {
     @Test
     fun displayResponse__result() {
-        val result = GrepClient.Server.Response.Result("name", listOf("result"))
+        val result = Client.Server.Response.Result("name", listOf("result"))
         val stdOutStream = ByteArrayOutputStream()
         val stdErrStream = ByteArrayOutputStream()
 
-        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream))
+        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream), DummyLogger())
                 .displayResponse(result)
 
         // Note: trailing \n is because presenter calls println()
@@ -21,11 +24,11 @@ class PrintStreamPresenterTest {
 
     @Test
     fun displayResponse__error() {
-        val result = GrepClient.Server.Response.Error("name", listOf("error!"))
+        val result = Client.Server.Response.Error("name", listOf("error!"))
         val stdOutStream = ByteArrayOutputStream()
         val stdErrStream = ByteArrayOutputStream()
 
-        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream))
+        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream), DummyLogger())
                 .displayResponse(result)
 
         // Note: trailing \n is because presenter calls println()
@@ -38,7 +41,7 @@ class PrintStreamPresenterTest {
         val stdOutStream = ByteArrayOutputStream()
         val stdErrStream = ByteArrayOutputStream()
 
-        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream))
+        PrintStreamPresenter(PrintStream(stdOutStream), PrintStream(stdErrStream), DummyLogger())
                 .displayHelp("hello world!")
 
         assertEquals(stdErrStream.toString(), "hello world!\n")

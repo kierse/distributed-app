@@ -18,3 +18,4 @@ const val SSH_USER = "ec2-user"
 
 const val MESSAGE_HEADER_SIZE = 2 // in bytes
 
+const val FS_LOG_LOCATION = "logs/distributed-app.log"

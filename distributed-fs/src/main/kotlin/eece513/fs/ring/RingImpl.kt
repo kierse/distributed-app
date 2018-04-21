@@ -152,7 +152,7 @@ class RingImpl /* testing */ constructor(
 
     override fun addSuccessor(successor: Node) {
         pendingSuccessorActions[successor] = mutableListOf()
-        sentSuccessorActions[successor] = SuccessorSentActions(logger = logger)
+        sentSuccessorActions[successor] = SuccessorSentActions(logger)
     }
 
     override fun removeSuccessor(successor: Node) {

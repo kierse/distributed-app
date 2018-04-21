@@ -1,13 +1,13 @@
 package eece513.fs.ring
 
 import com.nhaarman.mockito_kotlin.*
-import eece513.fs.DummyLogger
 import eece513.common.Logger
 import eece513.fs.PredecessorHeartbeatMonitorController
 import eece513.fs.channel.*
 import eece513.common.model.Action
 import eece513.fs.model.MembershipList
 import eece513.common.model.Node
+import eece513.fs.DummyLogger
 import eece513.fs.util.SuccessorSentActions
 import kotlinx.coroutines.experimental.channels.Channel
 import org.junit.Assert.*
@@ -186,7 +186,7 @@ class RingImplTest {
 
         val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
-        ring.sentSuccessorActions[node] = SuccessorSentActions()
+        ring.sentSuccessorActions[node] = SuccessorSentActions(DummyLogger())
 
         ring.sendActionsToSuccessor(node, sender)
 
@@ -203,7 +203,7 @@ class RingImplTest {
 
         val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
-        ring.sentSuccessorActions[node] = SuccessorSentActions()
+        ring.sentSuccessorActions[node] = SuccessorSentActions(DummyLogger())
 
         ring.sendActionsToSuccessor(node, sender)
 
@@ -235,7 +235,7 @@ class RingImplTest {
 
         val ring = RingImpl(node, fileSystem, Channel(), logger)
         ring.pendingSuccessorActions[node] = actions
-        ring.sentSuccessorActions[node] = SuccessorSentActions()
+        ring.sentSuccessorActions[node] = SuccessorSentActions(DummyLogger())
 
         ring.sendActionsToSuccessor(node, sender)
 

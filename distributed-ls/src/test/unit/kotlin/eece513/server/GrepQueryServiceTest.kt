@@ -1,4 +1,5 @@
 import eece513.DummyLogger
+import eece513.server.GrepQueryService
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -7,7 +8,7 @@ class GrepQueryServiceTest {
     @Test
     fun search__result() {
         GrepQueryService("echo", "file", DummyLogger())
-                .search(
+                .execute(
                         arrayOf("a", "b", "c"),
                         { result ->
                             assertEquals(result, "a b c file")
@@ -19,7 +20,7 @@ class GrepQueryServiceTest {
     @Test
     fun search__error() {
         GrepQueryService("grep", "--help", DummyLogger())
-                .search(
+                .execute(
                         arrayOf("a", "b", "c"),
                         { fail() },
                         { lines ->

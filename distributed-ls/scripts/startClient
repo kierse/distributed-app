@@ -2,5 +2,5 @@
 if [ "$@" == "lshere" ]; then
 	    ls
 else
-    java -cp ~/distributed-ls-1.0.jar eece513.client.GrepClient "$@"
+    java -cp ~/distributed-ls-1.0.jar eece513.client.Client "$@"
 fi

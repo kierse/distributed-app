@@ -12,7 +12,7 @@ import eece513.fsClient.message.MessageReader
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-//    val logger = TinyLogWrapper(LOG_LOCATION)
+//    val logger = TinyLogWrapper(FS_LOG_LOCATION)
     val logger = TinyLogWrapper()
 
     val remoteAddresses = FileIO().ReadLinesAsInetAddress(SERVERS_FILE_PATH)

@@ -14,6 +14,8 @@ function displayHelp {
     echo "    put <localFileName> <remoteFileName>           (add a local file to fs513 with the given fs513 name)"
     echo "    get <remoteFileName> <localFileName>           (fetch a fs513 file to the local machine)"
     echo "    remove <remoteFileName>                        (delete a file from fs513)"
+    echo
+    echo "    grep [<arg1> <arg2> ... <argN>]                (search the fs513 server logs)"
     echo "    locate <remoteFileName>                        (list all machines (name / id / IP address) of the servers that contain a copy of the file)"
     echo "    ls                                             (list all files in fs513)"
     echo "    lshere                                         (list all fs513 files stored on the local machine)"
@@ -43,31 +45,35 @@ case $1 in
     put)
         localFileName=$(getCommandArgument $2 "must specify a localFileName")
         remoteFileName=$(getCommandArgument $3 "must specify a remoteFileName")
-        java -jar $fs_client "put" $localFileName $remoteFileName
+        java -jar $fs_client "put" "$localFileName" "$remoteFileName"
         ;;
 
     get)
         remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
         localFileName=$(getCommandArgument $3 "must specify a localFileName")
-        java -jar $fs_client "get" $remoteFileName $localFileName
+        java -jar $fs_client "get" "$remoteFileName" "$localFileName"
         ;;
 
     remove)
         remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
-        java -jar $fs_client "remove" $remoteFileName
+        java -jar $fs_client "remove" "$remoteFileName"
+        ;;
+
+    grep)
+        java -cp distributed-ls-1.0.jar eece513.client.Client "$@"
         ;;
 
     locate)
         remoteFileName=$(getCommandArgument $2 "must specify a remoteFileName")
-        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1 $remoteFileName
+        java -cp distributed-ls-1.0.jar eece513.client.Client "locate" "$remoteFileName"
         ;;
 
     lshere)
-        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1
+        java -cp distributed-ls-1.0.jar eece513.client.Client "lshere"
         ;;
 
     ls)
-        java -cp distributed-ls-1.0.jar eece513.client.GrepClient $1
+        java -cp distributed-ls-1.0.jar eece513.client.Client "ls"
         ;;
 
     --help)

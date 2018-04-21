@@ -1,9 +1,9 @@
 import com.nhaarman.mockito_kotlin.mock
-import eece513.client.FileIO
-import eece513.client.GrepClient
+import eece513.SERVER_PORT
+import eece513.client.Client
 import eece513.client.ServerImpl
-import eece513.helper.ResultCounterPresenter
-import eece513.helper.pathToAssets
+import eece513.common.TinyLogWrapper
+import eece513.common.util.FileIO
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -20,8 +20,8 @@ class MachineTwoTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("/var/spool/gn/Fun/Movies"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("/var/spool/gn/Fun/Movies"))
 
         assertEquals(1, presenter.count)
     }

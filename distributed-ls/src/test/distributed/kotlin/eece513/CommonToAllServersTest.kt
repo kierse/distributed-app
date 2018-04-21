@@ -1,9 +1,10 @@
 import com.nhaarman.mockito_kotlin.mock
-import eece513.client.FileIO
-import eece513.client.GrepClient
+import eece513.DummyLogger
+import eece513.SERVER_PORT
+import eece513.client.Client
 import eece513.client.ServerImpl
-import eece513.helper.ResultCounterPresenter
-import eece513.helper.pathToAssets
+import eece513.common.TinyLogWrapper
+import eece513.common.util.FileIO
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -24,8 +25,8 @@ class CommonToAllServersTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("Lorem ipsum"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("Lorem ipsum"))
 
         assertEquals(6, presenter.count)
     }
@@ -40,8 +41,8 @@ class CommonToAllServersTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("broadway.sfn.saskatoon.sk.ca"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("broadway.sfn.saskatoon.sk.ca"))
 
         assertEquals(6, presenter.count)
     }
@@ -56,8 +57,8 @@ class CommonToAllServersTest {
             ServerImpl(address, SERVER_PORT, (count++).toString(), logger)
         }
 
-        GrepClient(presenter, mock(), logger, servers)
-                .search(arrayOf("httpd"))
+        Client(presenter, mock(), logger, servers)
+                .execute(arrayOf("httpd"))
 
         assertEquals(33, presenter.count)
     }

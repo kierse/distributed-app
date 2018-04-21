@@ -1,5 +1,6 @@
 package eece513.client
 
+import eece513.ARGS_SEPARATOR
 import eece513.common.Logger
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -9,7 +10,7 @@ import java.net.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Class that implements [GrepClient.Server.Query] and uses java.net.Socket's internally. This class opens a Java
+ * Class that implements [Client.Server.Query] and uses java.net.Socket's internally. This class opens a Java
  * Socket to the given [ip] and [port], then marshall's data between the remote server and the invoking code.
  *
  * Note: QueryImpl implements the Runnable interface so instances can be executed by [Thread].
@@ -20,8 +21,8 @@ class QueryImpl(
         private val id: String,
         private val args: Array<String>,
         private val logger: Logger,
-        private val onResponse: (GrepClient.Server.Response) -> Unit
-) : GrepClient.Server.Query, Runnable {
+        private val onResponse: (Client.Server.Response) -> Unit
+) : Client.Server.Query, Runnable {
 
     private val tag = QueryImpl::class.java.simpleName
     private val moreResults = AtomicBoolean(true)
@@ -45,7 +46,7 @@ class QueryImpl(
         val osw = OutputStreamWriter(socket.getOutputStream())
         val bw = BufferedWriter(osw)
 
-        bw.write(args.joinToString(":"))
+        bw.write(args.joinToString(ARGS_SEPARATOR))
         bw.flush()
 
         // indicate no more data
@@ -57,15 +58,15 @@ class QueryImpl(
         while (true) {
             val header = br.readLine() ?: break
 
-            val (type, count) = header.split(":")
+            val (type, count) = header.split(ARGS_SEPARATOR)
             val result = readValue(br, count.toInt())
 
             val response = when (type) {
-                "E" -> GrepClient.Server.Response.Error(
+                "E" -> Client.Server.Response.Error(
                         name = id, result = result
                 )
 
-                "R" -> GrepClient.Server.Response.Result(
+                "R" -> Client.Server.Response.Result(
                         name = id, result = result
                 )
 
@@ -80,7 +81,7 @@ class QueryImpl(
     }
 
     private fun handleConnectionError() {
-        val response = GrepClient.Server.Response.Error(
+        val response = Client.Server.Response.Error(
                 name = id, result = listOf("Server Unreachable")
         )
         onResponse.invoke(response)

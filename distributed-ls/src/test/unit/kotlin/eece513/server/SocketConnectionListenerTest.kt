@@ -1,3 +1,5 @@
+package eece513.server
+
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.mock
 import com.nhaarman.mockito_kotlin.times
@@ -15,7 +17,7 @@ class SocketConnectionListenerTest {
 
     @Test
     fun listen__invoke_callback_on_socket_connection() {
-        val onQuery = mock<(GrepServer.ConnectionListener.Connection) -> Unit>()
+        val onQuery = mock<(Server.ConnectionListener.Connection) -> Unit>()
         val loop = AtomicBoolean(true)
 
         val thread = thread {
@@ -36,7 +38,7 @@ class SocketConnectionListenerTest {
 
     @Test
     fun listen__listens_for_new_connect_when_old_closes() {
-        val onQuery = mock<(GrepServer.ConnectionListener.Connection) -> Unit>()
+        val onQuery = mock<(Server.ConnectionListener.Connection) -> Unit>()
         val loop = AtomicBoolean(true)
 
         val thread = thread {
