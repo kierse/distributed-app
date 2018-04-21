@@ -4,20 +4,25 @@ Attention: for Windows users, replace `gradlew` with `gradlew.bat`
 
 ## How to Use ##
 1. Set up EC2 instance and pull from master
-2. Update instances to Java 9 if required
+2. Update instances to [Java 9](#markdown-header-to-install-java9) if required
 3. Create a "Server.txt" file in the project root with Public DNS addresses of each EC2 instance
-4. Run the following command to build and deploy:
+4. Initialize the instance with the following command:
     ```
-     > ./gradlew bootstrapAws -Ppem=/Users/kierse/.ssh/eece513_aws.pem
+    > ./script/deploymentScript /Users/kierse/.ssh/eece513_aws.pem --ssh-keys
     ```
-5. In any EC2 instance home directory, start a cluster node:
-```
-> java -jar distributed-app-1.0.jar
-```
-6. On startup, the node will print out its join address. This address can be used by other nodes wishing to join its cluster:
-````
-> java -jar distributed-app-1.0.jar 127.0.0.1
-````
+5. Run the following command to build and deploy:<br />
+_Note: this will build and deploy fs513 and the grep service_
+    ```
+    > ./gradlew bootstrapAws -Ppem=/Users/kierse/.ssh/eece513_aws.pem
+    ```
+6. In any EC2 instance home directory, start a cluster node:
+    ```
+    > java -jar distributed-app-1.0.jar
+    ```
+7. On startup, the node will print out its join address. This address can be used by other nodes wishing to join its cluster:
+    ````
+    > java -jar distributed-app-1.0.jar 127.0.0.1
+    ````
 Note: starting a node without the address of an existing cluster will effectively create a second cluster.
 
 ## To grep node logs ##

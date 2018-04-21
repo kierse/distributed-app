@@ -42,8 +42,8 @@ class RingImpl /* testing */ constructor(
             logger: Logger
     ): this(self, fileSystem, MembershipList(listOf(self)), missedHeartbeatChannel, logger)
 
-    fun initialize() {
-        fileSystem.initialize()
+    fun initialize(node: Node) {
+        fileSystem.initialize(node.addr.hostName)
     }
 
     // SelectionKey.OP_READ && Type.PREDECESSOR_ACTION_READ

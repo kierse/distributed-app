@@ -37,7 +37,7 @@ fun main(args: Array<String>) {
     val ring = RingImpl(self, fileSystem, heartbeatCoroutineChannel, logger)
     val predecessorMonitor = PredecessorHeartbeatMonitorController(heartbeatCoroutineChannel, SendableMessageFactory(), logger)
 
-    ring.initialize()
+    ring.initialize(self)
 
     val clusterActionMapper = ClusterActionMapper()
     val connectionPurposeMapper = ConnectionPurposeMapper()

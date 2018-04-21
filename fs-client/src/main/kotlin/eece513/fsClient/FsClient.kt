@@ -156,6 +156,7 @@ class FsClient(
             val job = async(CommonPool) {
                 val result: Boolean?
                 while (true) {
+                    logger.debug(tag, "prompting user to confirm put")
                     print("'${command.remoteFile}' has been updated in the last 60 seconds. Do you want to overwrite? [Y/n] ")
                     val response = readLine() ?: continue
 

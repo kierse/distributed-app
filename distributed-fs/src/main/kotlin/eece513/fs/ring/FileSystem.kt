@@ -16,7 +16,9 @@ class FileSystem(private val logger: Logger) {
 
     private val remoteFileToTimestamp = mutableMapOf<String, MutableList<String>>()
 
-    fun initialize() {
+    fun initialize(selfAddress: String) {
+        saveAddressListToDisk(listOf(selfAddress))
+
         // make sure filesystem directory exists
         File(FILE_SYSTEM_PATH).mkdirs()
 
