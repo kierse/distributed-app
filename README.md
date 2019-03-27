@@ -6,7 +6,13 @@ Attention: for Windows users, replace `gradlew` with `gradlew.bat`
 - Set up EC2 instance and pull from master
 - Update instances to [Java 9](#markdown-header-to-install-java9) if required
 - Create a "server.txt" file in the project root with Public DNS addresses of each EC2 instance
-- Initialize the instances with the following command:
+- Generate public/private ssh key (without password) and save to keys/server-to-server:
+
+_Note: from the project root directory_
+```
+> ssh-keygen -t rsa -b 4096 -C "server-to-server"
+```
+- Initialize the instances with the following commands:
 
 _Note: substitute first argument with path to actual pem file_
 ```
@@ -30,6 +36,13 @@ _Note: replace 127.0.0.1 with the join address obtained in the previous step_
 ```
 
 **_Warning: starting a node without the address of an existing cluster will effectively create a second cluster._**
+
+### Run commands across cluster ###
+
+_Note: substitute path to actual pem file_
+```
+> csshx/csshX --login ec2-user -ssh_args "-i ~/.ssh/eece513_aws.pem" --hosts servers.txt
+```
 
 ## fs513 ##
 fs513 is a command line script that can be used to interact with the distributed filesystem.

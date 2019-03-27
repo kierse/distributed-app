@@ -80,3 +80,5 @@ csshx
 *.pem
 
 /*/out/
+
+keys/server-to-server*
